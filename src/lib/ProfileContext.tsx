@@ -28,22 +28,26 @@ export function ProfileProvider({ children }: { children: React.ReactNode }) {
 
     async function loadProfile() {
       try {
-        // Step 1: try localStorage session (instant)
         let userId: string | undefined
+
+        // Step 1: fast path — read session from localStorage
         const { data: { session } } = await supabase.auth.getSession()
         userId = session?.user?.id
 
-        // Step 2: if no session in localStorage, verify with server via cookie
-        // This handles the "closed browser and reopened" case where only
-        // the HTTP-only cookie exists (JS can't read it, but getUser() can)
         if (!userId) {
-          const { data: { user } } = await supabase.auth.getUser()
-          userId = user?.id
+          // Step 2: localStorage is empty (browser reopened, session cleared).
+          // refreshSession() sends the HTTP-only refresh token cookie to Supabase,
+          // gets back a new access token, and STORES it in the client's memory.
+          // This is critical — without this, the profiles query below runs without
+          // an auth header and RLS blocks it, returning null profile forever.
+          const { data: { session: refreshed } } = await supabase.auth.refreshSession()
+          userId = refreshed?.user?.id
         }
 
         if (userId) {
-          const { data } = await supabase
+          const { data, error } = await supabase
             .from('profiles').select('*').eq('id', userId).single()
+          if (error) console.error('Profiles query error:', error.message)
           if (mounted && data) setProfile(data as Profile)
         }
       } catch (err) {
