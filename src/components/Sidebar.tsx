@@ -2,7 +2,6 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { createBrowserClient } from '@supabase/ssr'
 import { Profile } from '@/lib/types'
 
 function DashboardIcon({ className }: { className?: string }) {
@@ -74,11 +73,7 @@ export default function Sidebar({ profile }: { profile: Profile | null }) {
   const pathname = usePathname()
 
   const handleLogout = async () => {
-    const supabase = createBrowserClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-    )
-    await supabase.auth.signOut()
+    await fetch('/api/auth/signout', { method: 'POST' })
     window.location.href = '/login'
   }
 
