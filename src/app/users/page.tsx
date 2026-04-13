@@ -124,42 +124,28 @@ export default function UsersPage() {
 
       const role = getRoleFromDepartment(formDept)
 
-      const { data: authData, error: authError } = await supabase.auth.signUp({
-        email: formEmail,
-        password: formPassword,
-        options: {
-          data: {
-            name: formName,
-            department: formDept,
-            role,
-          },
-        },
-      })
-
-      if (authError) {
-        setFormError(authError.message)
-        setSaving(false)
-        return
-      }
-
-      if (authData.user) {
-        const { error: profileError } = await supabase.from('profiles').insert({
-          id: authData.user.id,
+      const res = await fetch('/api/users/create', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email: formEmail,
+          password: formPassword,
           name: formName,
           department: formDept,
           role,
           al_entitled: formAL,
           ml_entitled: formML,
           join_date: formJoinDate,
-        })
+        }),
+      })
 
-        if (profileError) {
-          setFormError(profileError.message)
-        } else {
-          setShowForm(false)
-          resetForm()
-          loadUsers()
-        }
+      const result = await res.json()
+      if (!res.ok) {
+        setFormError(result.error || 'Failed to create user')
+      } else {
+        setShowForm(false)
+        resetForm()
+        loadUsers()
       }
     }
     setSaving(false)
