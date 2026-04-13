@@ -32,7 +32,7 @@ export default function LoginPage() {
   return (
     <div className="min-h-screen flex">
       {/* Left Panel */}
-      <div className="hidden lg:flex lg:w-[65%] bg-[#0d1229] relative overflow-hidden flex-col justify-between p-12">
+      <div className="hidden lg:flex lg:w-[72%] bg-[#0c1440] relative overflow-hidden flex-col justify-between p-12">
         {/* Decorative rings */}
         <div className="absolute -top-40 -left-40 w-[500px] h-[500px] rounded-full border border-white/5" />
         <div className="absolute -top-20 -left-20 w-96 h-96 rounded-full border border-white/5" />
@@ -41,21 +41,21 @@ export default function LoginPage() {
 
         {/* Logo — top left */}
         <div className="relative z-10 flex items-center gap-3">
-          <div className="w-12 h-12 rounded-xl bg-indigo-600 flex items-center justify-center flex-shrink-0">
-            <span className="text-white font-bold text-xl">A</span>
+          <div className="w-14 h-14 rounded-xl bg-indigo-600 flex items-center justify-center flex-shrink-0">
+            <span className="text-white font-bold text-2xl">A</span>
           </div>
           <div>
-            <p className="text-white font-bold text-lg leading-tight">AJIMINO SDN. BHD.</p>
-            <p className="text-slate-400 text-xs">More Than Just Fertilizer</p>
+            <p className="text-white font-bold text-xl leading-tight">AJIMINO SDN. BHD.</p>
+            <p className="text-slate-400 text-sm">More Than Just Fertilizer</p>
           </div>
         </div>
 
         {/* Main Content — centered vertically */}
         <div className="relative z-10 flex-1 flex flex-col justify-center py-16">
-          <h2 className="text-white text-5xl font-bold leading-tight mb-4">
+          <h2 className="text-white text-4xl font-bold leading-tight mb-4">
             Your complete<br />HR platform.
           </h2>
-          <p className="text-slate-400 text-base mb-12 max-w-lg">
+          <p className="text-slate-400 text-sm mb-12 max-w-lg">
             Built for AJIMINO&apos;s team — manage leave, payslips, bookings and policies in one place.
           </p>
 
@@ -86,7 +86,7 @@ export default function LoginPage() {
 
       {/* Right Panel — Login Form */}
       <div className="flex-1 flex items-center justify-center p-8 bg-white">
-        <div className="w-full max-w-sm">
+        <div className="w-full max-w-xs">
           {/* Mobile branding */}
           <div className="lg:hidden flex items-center gap-3 mb-8">
             <div className="w-10 h-10 rounded-xl bg-indigo-600 flex items-center justify-center">
