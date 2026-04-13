@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import Link from 'next/link'
+import Image from 'next/image'
 import { usePathname } from 'next/navigation'
 import { Profile } from '@/lib/types'
 
@@ -78,7 +79,6 @@ export default function Sidebar({ profile }: { profile: Profile | null }) {
     try {
       await fetch('/api/auth/signout', { method: 'POST' })
     } catch { }
-    // Clear all cookies client-side too
     document.cookie.split(';').forEach(c => {
       document.cookie = c.trim().split('=')[0] + '=;expires=Thu, 01 Jan 1970 00:00:00 UTC;path=/'
     })
@@ -93,20 +93,21 @@ export default function Sidebar({ profile }: { profile: Profile | null }) {
   })
 
   const sidebarContent = (
-    <aside className="fixed left-0 top-0 h-screen w-[200px] bg-[#0f172a] flex flex-col z-50">
-      <div className="p-5 border-b border-slate-700">
-        <div className="flex items-center gap-2">
-          <div className="w-8 h-8 rounded-lg bg-indigo-600 flex items-center justify-center">
-            <span className="text-white font-bold text-sm">A</span>
-          </div>
-          <div>
-            <p className="text-white font-bold text-sm leading-tight">AJIMINO</p>
-            <p className="text-slate-400 text-[10px]">SDN. BHD.</p>
-          </div>
+    <aside className="fixed left-0 top-0 h-screen w-[200px] flex flex-col z-50" style={{ background: '#0A1128' }}>
+
+      {/* Logo — same style as CRM */}
+      <div className="flex items-center gap-3 px-5 py-5 shrink-0">
+        <div className="w-9 h-9 rounded-xl shrink-0 overflow-hidden flex items-center justify-center" style={{ background: '#FFFFFF', padding: 3 }}>
+          <Image src="/Ajimino-logo-colour-FA-01.jpg" alt="AJIMINO Logo" width={36} height={36} className="object-contain w-full h-full" />
+        </div>
+        <div className="flex flex-col leading-none">
+          <span className="font-bold text-sm text-white tracking-wide">AJIMINO</span>
+          <span className="text-[11px] font-medium mt-0.5" style={{ color: 'rgba(255,255,255,0.45)' }}>HR Portal</span>
         </div>
       </div>
 
-      <nav className="flex-1 py-4 px-3 space-y-1 overflow-y-auto">
+      {/* Nav */}
+      <nav className="flex-1 py-2 px-3 space-y-1 overflow-y-auto">
         {visibleNav.map(item => {
           const isActive = pathname === item.href
           const Icon = item.icon
@@ -115,31 +116,42 @@ export default function Sidebar({ profile }: { profile: Profile | null }) {
               key={item.href}
               href={item.href}
               onClick={() => setMobileOpen(false)}
-              className={`flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-colors ${
-                isActive
-                  ? 'bg-indigo-600 text-white'
-                  : 'text-slate-400 hover:text-white hover:bg-slate-800'
-              }`}
+              className="flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all duration-150"
+              style={isActive
+                ? { background: '#4338CA', color: '#FFFFFF' }
+                : { color: 'rgba(255,255,255,0.5)' }
+              }
+              onMouseEnter={e => { if (!isActive) { (e.currentTarget as HTMLElement).style.background = 'rgba(255,255,255,0.07)'; (e.currentTarget as HTMLElement).style.color = 'rgba(255,255,255,0.85)' } }}
+              onMouseLeave={e => { if (!isActive) { (e.currentTarget as HTMLElement).style.background = ''; (e.currentTarget as HTMLElement).style.color = 'rgba(255,255,255,0.5)' } }}
             >
-              <Icon className="w-4 h-4 flex-shrink-0" />
+              <Icon className="w-[18px] h-[18px] flex-shrink-0" />
               {item.label}
             </Link>
           )
         })}
       </nav>
 
-      <div className="p-3 border-t border-slate-700">
+      {/* User + Logout */}
+      <div className="px-3 pb-5 shrink-0" style={{ borderTop: '1px solid rgba(255,255,255,0.06)' }}>
         {profile && (
-          <div className="px-3 py-2 mb-2">
-            <p className="text-white text-sm font-medium truncate">{profile.name}</p>
-            <p className="text-slate-400 text-xs">{profile.department}</p>
+          <div className="flex items-center gap-2.5 px-2 py-2.5 rounded-xl mt-3" style={{ background: 'rgba(255,255,255,0.06)' }}>
+            <div className="flex items-center justify-center w-8 h-8 rounded-full text-xs font-bold shrink-0 text-white" style={{ background: '#4338CA' }}>
+              {profile.name?.charAt(0).toUpperCase()}
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-semibold truncate leading-tight text-white">{profile.name}</p>
+              <p className="text-[10px] font-medium capitalize" style={{ color: 'rgba(255,255,255,0.4)' }}>{profile.role}</p>
+            </div>
           </div>
         )}
         <button
           onClick={handleLogout}
-          className="flex items-center gap-3 w-full px-3 py-2.5 rounded-xl text-sm font-medium text-slate-400 hover:text-white hover:bg-slate-800 transition-colors"
+          className="w-full flex items-center gap-3 px-3 py-2 rounded-xl text-sm font-medium transition-all duration-150 mt-1"
+          style={{ color: 'rgba(255,255,255,0.5)' }}
+          onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = 'rgba(200,32,47,0.15)'; (e.currentTarget as HTMLElement).style.color = '#F87171' }}
+          onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = ''; (e.currentTarget as HTMLElement).style.color = 'rgba(255,255,255,0.5)' }}
         >
-          <LogoutIcon className="w-4 h-4" />
+          <LogoutIcon className="w-[18px] h-[18px]" />
           Logout
         </button>
       </div>
@@ -150,7 +162,8 @@ export default function Sidebar({ profile }: { profile: Profile | null }) {
     <>
       {/* Hamburger button — mobile only */}
       <button
-        className="md:hidden fixed top-4 left-4 z-[60] p-2 bg-[#0f172a] text-white rounded-lg shadow-lg"
+        className="md:hidden fixed top-4 left-4 z-[60] p-2 text-white rounded-lg shadow-lg"
+        style={{ background: '#0A1128' }}
         onClick={() => setMobileOpen(true)}
         aria-label="Open menu"
       >
@@ -159,20 +172,15 @@ export default function Sidebar({ profile }: { profile: Profile | null }) {
         </svg>
       </button>
 
-      {/* Desktop sidebar — always visible */}
+      {/* Desktop sidebar */}
       <div className="hidden md:block">
         {sidebarContent}
       </div>
 
-      {/* Mobile sidebar — shown when open */}
+      {/* Mobile sidebar */}
       {mobileOpen && (
         <div className="md:hidden">
-          {/* Dark overlay backdrop */}
-          <div
-            className="fixed inset-0 bg-black/50 z-40"
-            onClick={() => setMobileOpen(false)}
-          />
-          {/* Sidebar panel */}
+          <div className="fixed inset-0 bg-black/50 z-40" onClick={() => setMobileOpen(false)} />
           {sidebarContent}
         </div>
       )}
