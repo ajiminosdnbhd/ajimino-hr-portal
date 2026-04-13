@@ -62,9 +62,17 @@ function LogoutIcon({ className }: { className?: string }) {
   )
 }
 
+function MoreIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M5 12h.01M12 12h.01M19 12h.01M6 12a1 1 0 11-2 0 1 1 0 012 0zm7 0a1 1 0 11-2 0 1 1 0 012 0zm7 0a1 1 0 11-2 0 1 1 0 012 0z" />
+    </svg>
+  )
+}
+
 const NAV_ITEMS = [
   { href: '/dashboard', label: 'Dashboard', icon: DashboardIcon },
-  { href: '/bookings', label: 'Room Booking', icon: BookingIcon },
+  { href: '/bookings', label: 'Booking', icon: BookingIcon },
   { href: '/leave', label: 'Leave', icon: LeaveIcon },
   { href: '/policies', label: 'Policies', icon: PolicyIcon },
   { href: '/payslips', label: 'Payslips', icon: PayslipIcon },
@@ -73,7 +81,7 @@ const NAV_ITEMS = [
 
 export default function Sidebar({ profile }: { profile: Profile | null }) {
   const pathname = usePathname()
-  const [mobileOpen, setMobileOpen] = useState(false)
+  const [moreOpen, setMoreOpen] = useState(false)
 
   const handleLogout = async () => {
     try {
@@ -92,13 +100,19 @@ export default function Sidebar({ profile }: { profile: Profile | null }) {
     return true
   })
 
-  const sidebarContent = (
+  // For mobile bottom nav: show first 4 items + "More" if there are extras
+  const BOTTOM_LIMIT = 4
+  const bottomItems = visibleNav.slice(0, BOTTOM_LIMIT)
+  const moreItems = visibleNav.slice(BOTTOM_LIMIT)
+  const hasMore = moreItems.length > 0
+
+  // ── Desktop sidebar (md and above) ─────────────────────────────────────
+  const desktopSidebar = (
     <aside
-      className="fixed left-0 top-0 h-screen w-[200px] flex flex-col z-50 transition-transform duration-300 ease-in-out"
+      className="hidden md:flex fixed left-0 top-0 h-screen w-[200px] flex-col z-50"
       style={{ background: '#0A1128' }}
     >
-
-      {/* Logo — same style as CRM */}
+      {/* Logo */}
       <div className="flex items-center gap-3 px-5 py-5 shrink-0">
         <div className="w-9 h-9 rounded-xl shrink-0 overflow-hidden flex items-center justify-center" style={{ background: '#FFFFFF', padding: 3 }}>
           <Image src="/Ajimino-logo-colour-FA-01.jpg" alt="AJIMINO Logo" width={36} height={36} className="object-contain w-full h-full" />
@@ -118,7 +132,6 @@ export default function Sidebar({ profile }: { profile: Profile | null }) {
             <Link
               key={item.href}
               href={item.href}
-              onClick={() => setMobileOpen(false)}
               className="flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all duration-150"
               style={isActive
                 ? { background: '#4338CA', color: '#FFFFFF' }
@@ -161,108 +174,113 @@ export default function Sidebar({ profile }: { profile: Profile | null }) {
     </aside>
   )
 
-  return (
-    <>
-      {/* Mobile top bar — fixed at top, full width, same dark color as sidebar */}
-      <div
-        className="md:hidden fixed top-0 left-0 right-0 h-14 z-[60] flex items-center px-4 gap-3"
-        style={{ background: '#0A1128' }}
-      >
-        <button
-          onClick={() => setMobileOpen(true)}
-          aria-label="Open menu"
-          className="p-1.5 rounded-lg"
-          style={{ color: 'rgba(255,255,255,0.7)' }}
-        >
-          <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-            <path strokeLinecap="round" strokeLinejoin="round" d="M4 6h16M4 12h16M4 18h16" />
-          </svg>
-        </button>
-        <div className="w-7 h-7 rounded-lg overflow-hidden flex-shrink-0" style={{ background: '#FFFFFF', padding: 2 }}>
-          <img src="/Ajimino-logo-colour-FA-01.jpg" alt="AJIMINO Logo" className="w-full h-full object-contain" />
-        </div>
-        <div className="flex flex-col leading-none">
-          <span className="font-bold text-sm text-white tracking-wide">AJIMINO</span>
-          <span className="text-[10px]" style={{ color: 'rgba(255,255,255,0.45)' }}>HR Portal</span>
-        </div>
-      </div>
-
-      {/* Desktop sidebar — always visible on md+ */}
-      <div className="hidden md:block">
-        {sidebarContent}
-      </div>
-
-      {/* Mobile sidebar — always in DOM, slides in/out with CSS */}
-      <div className="md:hidden">
-        {/* Backdrop */}
-        <div
-          className="fixed inset-0 bg-black/50 z-40 transition-opacity duration-300"
-          style={{ opacity: mobileOpen ? 1 : 0, pointerEvents: mobileOpen ? 'auto' : 'none' }}
-          onClick={() => setMobileOpen(false)}
-        />
-        {/* Sidebar panel — slides from left */}
-        <aside
-          className="fixed left-0 top-0 h-screen w-[200px] flex flex-col z-50 transition-transform duration-300 ease-in-out"
-          style={{
-            background: '#0A1128',
-            transform: mobileOpen ? 'translateX(0)' : 'translateX(-100%)',
-          }}
-        >
-          {/* Logo */}
-          <div className="flex items-center gap-3 px-5 py-5 shrink-0">
-            <div className="w-9 h-9 rounded-xl shrink-0 overflow-hidden flex items-center justify-center" style={{ background: '#FFFFFF', padding: 3 }}>
-              <img src="/Ajimino-logo-colour-FA-01.jpg" alt="AJIMINO Logo" width={36} height={36} className="object-contain w-full h-full" />
-            </div>
-            <div className="flex flex-col leading-none">
-              <span className="font-bold text-sm text-white tracking-wide">AJIMINO</span>
-              <span className="text-[11px] font-medium mt-0.5" style={{ color: 'rgba(255,255,255,0.45)' }}>HR Portal</span>
-            </div>
-          </div>
-
-          {/* Nav */}
-          <nav className="flex-1 py-2 px-3 space-y-1 overflow-y-auto">
-            {visibleNav.map(item => {
+  // ── Mobile bottom nav (below md) ────────────────────────────────────────
+  const mobileBottomNav = (
+    <div className="md:hidden">
+      {/* "More" popover panel */}
+      {hasMore && moreOpen && (
+        <>
+          <div
+            className="fixed inset-0 z-40"
+            onClick={() => setMoreOpen(false)}
+          />
+          <div
+            className="fixed bottom-16 right-2 z-50 rounded-2xl shadow-xl py-2 min-w-[160px]"
+            style={{ background: '#0A1128', border: '1px solid rgba(255,255,255,0.08)' }}
+          >
+            {moreItems.map(item => {
               const isActive = pathname === item.href
               const Icon = item.icon
               return (
                 <Link
                   key={item.href}
                   href={item.href}
-                  onClick={() => setMobileOpen(false)}
-                  className="flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all duration-150"
-                  style={isActive ? { background: '#4338CA', color: '#FFFFFF' } : { color: 'rgba(255,255,255,0.5)' }}
+                  onClick={() => setMoreOpen(false)}
+                  className="flex items-center gap-3 px-4 py-3 text-sm font-medium"
+                  style={isActive ? { color: '#818CF8' } : { color: 'rgba(255,255,255,0.65)' }}
                 >
-                  <Icon className="w-[18px] h-[18px] flex-shrink-0" />
+                  <Icon className="w-5 h-5 flex-shrink-0" />
                   {item.label}
                 </Link>
               )
             })}
-          </nav>
-
-          {/* User + Logout */}
-          <div className="px-3 pb-5 shrink-0" style={{ borderTop: '1px solid rgba(255,255,255,0.06)' }}>
-            {profile && (
-              <div className="flex items-center gap-2.5 px-2 py-2.5 rounded-xl mt-3" style={{ background: 'rgba(255,255,255,0.06)' }}>
-                <div className="flex items-center justify-center w-8 h-8 rounded-full text-xs font-bold shrink-0 text-white" style={{ background: '#4338CA' }}>
-                  {profile.name?.charAt(0).toUpperCase()}
+            <div style={{ borderTop: '1px solid rgba(255,255,255,0.06)' }} className="mt-1 pt-1">
+              {profile && (
+                <div className="flex items-center gap-2.5 px-4 py-2.5">
+                  <div className="flex items-center justify-center w-7 h-7 rounded-full text-xs font-bold shrink-0 text-white" style={{ background: '#4338CA' }}>
+                    {profile.name?.charAt(0).toUpperCase()}
+                  </div>
+                  <div className="min-w-0">
+                    <p className="text-xs font-semibold truncate text-white">{profile.name}</p>
+                    <p className="text-[10px] capitalize" style={{ color: 'rgba(255,255,255,0.4)' }}>{profile.role}</p>
+                  </div>
                 </div>
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-semibold truncate leading-tight text-white">{profile.name}</p>
-                  <p className="text-[10px] font-medium capitalize" style={{ color: 'rgba(255,255,255,0.4)' }}>{profile.role}</p>
-                </div>
-              </div>
-            )}
-            <button
-              onClick={handleLogout}
-              className="w-full flex items-center gap-3 px-3 py-2 rounded-xl text-sm font-medium transition-all duration-150 mt-1"
-              style={{ color: 'rgba(255,255,255,0.5)' }}
-            >
-              <LogoutIcon className="w-[18px] h-[18px]" />
-              Logout
-            </button>
+              )}
+              <button
+                onClick={handleLogout}
+                className="flex items-center gap-3 px-4 py-3 text-sm font-medium w-full"
+                style={{ color: '#F87171' }}
+              >
+                <LogoutIcon className="w-5 h-5 flex-shrink-0" />
+                Logout
+              </button>
+            </div>
           </div>
-        </aside>
-      </div>
+        </>
+      )}
+
+      {/* Bottom navigation bar */}
+      <nav
+        className="fixed bottom-0 left-0 right-0 z-50 flex items-center"
+        style={{ background: '#0A1128', borderTop: '1px solid rgba(255,255,255,0.07)', paddingBottom: 'env(safe-area-inset-bottom)' }}
+      >
+        {bottomItems.map(item => {
+          const isActive = pathname === item.href
+          const Icon = item.icon
+          return (
+            <Link
+              key={item.href}
+              href={item.href}
+              className="flex-1 flex flex-col items-center justify-center py-2.5 gap-1"
+              style={isActive ? { color: '#818CF8' } : { color: 'rgba(255,255,255,0.4)' }}
+            >
+              <Icon className="w-5 h-5" />
+              <span className="text-[10px] font-medium">{item.label}</span>
+            </Link>
+          )
+        })}
+
+        {/* More button (only if extra nav items exist) */}
+        {hasMore && (
+          <button
+            className="flex-1 flex flex-col items-center justify-center py-2.5 gap-1"
+            style={moreItems.some(i => i.href === pathname) ? { color: '#818CF8' } : { color: 'rgba(255,255,255,0.4)' }}
+            onClick={() => setMoreOpen(v => !v)}
+          >
+            <MoreIcon className="w-5 h-5" />
+            <span className="text-[10px] font-medium">More</span>
+          </button>
+        )}
+
+        {/* Logout only shown inline if no "More" button */}
+        {!hasMore && (
+          <button
+            className="flex-1 flex flex-col items-center justify-center py-2.5 gap-1"
+            style={{ color: 'rgba(255,255,255,0.4)' }}
+            onClick={handleLogout}
+          >
+            <LogoutIcon className="w-5 h-5" />
+            <span className="text-[10px] font-medium">Logout</span>
+          </button>
+        )}
+      </nav>
+    </div>
+  )
+
+  return (
+    <>
+      {desktopSidebar}
+      {mobileBottomNav}
     </>
   )
 }
