@@ -73,8 +73,14 @@ export default function Sidebar({ profile }: { profile: Profile | null }) {
   const pathname = usePathname()
 
   const handleLogout = async () => {
-    await fetch('/api/auth/signout', { method: 'POST' })
-    window.location.href = '/login'
+    try {
+      await fetch('/api/auth/signout', { method: 'POST' })
+    } catch (_) {}
+    // Clear all cookies client-side too
+    document.cookie.split(';').forEach(c => {
+      document.cookie = c.trim().split('=')[0] + '=;expires=Thu, 01 Jan 1970 00:00:00 UTC;path=/'
+    })
+    window.location.replace('/login')
   }
 
   const visibleNav = NAV_ITEMS.filter(item => {
