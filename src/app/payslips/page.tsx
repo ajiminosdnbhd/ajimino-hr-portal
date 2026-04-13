@@ -109,7 +109,7 @@ export default function PayslipsPage() {
   return (
     <div className="flex min-h-screen">
       <Sidebar profile={profile} />
-      <main className="ml-[200px] flex-1 p-8">
+      <main className="md:ml-[200px] flex-1 p-4 md:p-8">
         <div className="flex items-center justify-between mb-8">
           <div>
             <h1 className="text-2xl font-bold text-slate-900">Payslips</h1>
@@ -141,7 +141,7 @@ export default function PayslipsPage() {
         {/* Upload Form Modal */}
         {showForm && (
           <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
-            <div className="bg-white rounded-2xl p-6 w-full max-w-md mx-4">
+            <div className="bg-white rounded-2xl p-6 w-full max-w-md mx-4 max-h-[90vh] overflow-y-auto">
               <div className="flex items-center justify-between mb-5">
                 <h2 className="text-lg font-bold text-slate-900">Upload Payslip</h2>
                 <button onClick={() => setShowForm(false)} className="text-slate-400 hover:text-slate-600">

@@ -1,5 +1,6 @@
 'use client'
 
+import { useState } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { Profile } from '@/lib/types'
@@ -71,6 +72,7 @@ const NAV_ITEMS = [
 
 export default function Sidebar({ profile }: { profile: Profile | null }) {
   const pathname = usePathname()
+  const [mobileOpen, setMobileOpen] = useState(false)
 
   const handleLogout = async () => {
     try {
@@ -90,7 +92,7 @@ export default function Sidebar({ profile }: { profile: Profile | null }) {
     return true
   })
 
-  return (
+  const sidebarContent = (
     <aside className="fixed left-0 top-0 h-screen w-[200px] bg-[#0f172a] flex flex-col z-50">
       <div className="p-5 border-b border-slate-700">
         <div className="flex items-center gap-2">
@@ -112,6 +114,7 @@ export default function Sidebar({ profile }: { profile: Profile | null }) {
             <Link
               key={item.href}
               href={item.href}
+              onClick={() => setMobileOpen(false)}
               className={`flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-colors ${
                 isActive
                   ? 'bg-indigo-600 text-white'
@@ -141,5 +144,38 @@ export default function Sidebar({ profile }: { profile: Profile | null }) {
         </button>
       </div>
     </aside>
+  )
+
+  return (
+    <>
+      {/* Hamburger button — mobile only */}
+      <button
+        className="md:hidden fixed top-4 left-4 z-[60] p-2 bg-[#0f172a] text-white rounded-lg shadow-lg"
+        onClick={() => setMobileOpen(true)}
+        aria-label="Open menu"
+      >
+        <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+          <path strokeLinecap="round" strokeLinejoin="round" d="M4 6h16M4 12h16M4 18h16" />
+        </svg>
+      </button>
+
+      {/* Desktop sidebar — always visible */}
+      <div className="hidden md:block">
+        {sidebarContent}
+      </div>
+
+      {/* Mobile sidebar — shown when open */}
+      {mobileOpen && (
+        <div className="md:hidden">
+          {/* Dark overlay backdrop */}
+          <div
+            className="fixed inset-0 bg-black/50 z-40"
+            onClick={() => setMobileOpen(false)}
+          />
+          {/* Sidebar panel */}
+          {sidebarContent}
+        </div>
+      )}
+    </>
   )
 }

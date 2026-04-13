@@ -112,7 +112,7 @@ export default function LoginPage() {
       </div>
 
       {/* ══ RIGHT PANEL ══ */}
-      <div className="flex flex-col items-center justify-center flex-1 lg:max-w-[480px] px-8 py-10 overflow-y-auto" style={{ background: '#F8F9FB', minHeight: '100svh' }}>
+      <div className="flex flex-col items-center justify-center flex-1 lg:max-w-[480px] px-4 md:px-8 py-10 overflow-y-auto" style={{ background: '#F8F9FB', minHeight: '100svh' }}>
 
         {/* Mobile-only logo */}
         <div className="lg:hidden flex items-center gap-2.5 mb-10">

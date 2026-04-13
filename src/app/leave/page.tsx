@@ -201,7 +201,7 @@ export default function LeavePage() {
   return (
     <div className="flex min-h-screen">
       <Sidebar profile={profile} />
-      <main className="ml-[200px] flex-1 p-8">
+      <main className="md:ml-[200px] flex-1 p-4 md:p-8">
         <div className="flex items-center justify-between mb-8">
           <div>
             <h1 className="text-2xl font-bold text-slate-900">Leave Management</h1>
@@ -280,7 +280,7 @@ export default function LeavePage() {
         {/* Leave Form Modal */}
         {showForm && (
           <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
-            <div className="bg-white rounded-2xl p-6 w-full max-w-md mx-4">
+            <div className="bg-white rounded-2xl p-6 w-full max-w-md mx-4 max-h-[90vh] overflow-y-auto">
               <div className="flex items-center justify-between mb-5">
                 <h2 className="text-lg font-bold text-slate-900">Apply for Leave</h2>
                 <button onClick={() => setShowForm(false)} className="text-slate-400 hover:text-slate-600">
@@ -377,7 +377,7 @@ export default function LeavePage() {
 
         {/* Staff Balances Tab — HR + Management only */}
         {tab === 'balances' && (
-          <div className="bg-white border border-gray-100 rounded-2xl overflow-hidden">
+          <div className="bg-white border border-gray-100 rounded-2xl overflow-x-auto">
             <table className="w-full">
               <thead>
                 <tr className="border-b border-gray-100">
@@ -431,7 +431,7 @@ export default function LeavePage() {
         )}
 
         {/* Leave Table — My Leaves + Approvals tabs */}
-        {tab !== 'balances' && <div className="bg-white border border-gray-100 rounded-2xl overflow-hidden">
+        {tab !== 'balances' && <div className="bg-white border border-gray-100 rounded-2xl overflow-x-auto">
           <table className="w-full">
             <thead>
               <tr className="border-b border-gray-100">

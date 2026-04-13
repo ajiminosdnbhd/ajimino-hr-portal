@@ -126,7 +126,7 @@ export default function BookingsPage() {
   return (
     <div className="flex min-h-screen">
       <Sidebar profile={profile} />
-      <main className="ml-[200px] flex-1 p-8">
+      <main className="md:ml-[200px] flex-1 p-4 md:p-8">
         <div className="flex items-center justify-between mb-8">
           <div>
             <h1 className="text-2xl font-bold text-slate-900">Room Booking</h1>
@@ -150,7 +150,7 @@ export default function BookingsPage() {
           ))}
         </div>
 
-        <div className="flex gap-6">
+        <div className="flex flex-col lg:flex-row gap-6">
           {/* Calendar */}
           <div className="flex-1 bg-white border border-gray-100 rounded-2xl p-6">
             <div className="flex items-center justify-between mb-6">
@@ -227,7 +227,7 @@ export default function BookingsPage() {
           </div>
 
           {/* Right Panel — Day Bookings */}
-          <div className="w-80 flex-shrink-0">
+          <div className="w-full lg:w-80 flex-shrink-0">
             <div className="bg-white border border-gray-100 rounded-2xl p-5">
               <h3 className="text-sm font-bold text-slate-900 mb-1">
                 {new Date(selectedDate + 'T00:00:00').toLocaleDateString('en-MY', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}

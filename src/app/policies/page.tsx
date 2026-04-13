@@ -92,7 +92,7 @@ export default function PoliciesPage() {
   return (
     <div className="flex min-h-screen">
       <Sidebar profile={profile} />
-      <main className="ml-[200px] flex-1 p-8">
+      <main className="md:ml-[200px] flex-1 p-4 md:p-8">
         <div className="flex items-center justify-between mb-8">
           <div>
             <h1 className="text-2xl font-bold text-slate-900">Company Policies</h1>
