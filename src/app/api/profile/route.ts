@@ -25,19 +25,19 @@ export async function GET() {
     }
   )
 
-  // getUser() validates the JWT server-side using the HTTP-only cookie.
-  // It also triggers a token refresh if needed and writes the new token
-  // back to the cookie, so the browser client stays in sync.
-  const { data: { user }, error: userError } = await supabase.auth.getUser()
+  // getSession() reads from HTTP-only cookies server-side.
+  // We use this (not getUser()) so we can return the tokens to the
+  // browser client, allowing it to restore its in-memory auth state.
+  const { data: { session }, error: sessionError } = await supabase.auth.getSession()
 
-  if (userError || !user) {
+  if (sessionError || !session) {
     return NextResponse.json({ profile: null }, { status: 401 })
   }
 
   const { data: profile, error: profileError } = await supabase
     .from('profiles')
     .select('*')
-    .eq('id', user.id)
+    .eq('id', session.user.id)
     .single()
 
   if (profileError) {
@@ -45,5 +45,13 @@ export async function GET() {
     return NextResponse.json({ profile: null }, { status: 500 })
   }
 
-  return NextResponse.json({ profile })
+  // Return access_token + refresh_token so ProfileContext can call
+  // supabase.auth.setSession() and restore auth in the browser client.
+  // This makes ALL subsequent browser client queries (leaves, stats, etc.)
+  // work correctly — even after browser close/reopen clears localStorage.
+  return NextResponse.json({
+    profile,
+    access_token: session.access_token,
+    refresh_token: session.refresh_token,
+  })
 }
