@@ -29,7 +29,10 @@ export default function UsersPage() {
 
   async function loadUsers() {
     const { data } = await supabase.from('profiles').select('*').order('name')
-    if (data) setUsers(data)
+    if (data) {
+      const roleOrder: Record<string, number> = { management: 0, hr: 1, staff: 2 }
+      setUsers(data.sort((a, b) => (roleOrder[a.role] ?? 3) - (roleOrder[b.role] ?? 3)))
+    }
   }
 
   function resetForm() {
