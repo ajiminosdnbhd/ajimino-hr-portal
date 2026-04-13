@@ -26,13 +26,24 @@ export function ProfileProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     let mounted = true
 
-    // Fast path: load profile immediately from existing session cookie
-    async function loadFromSession() {
+    async function loadProfile() {
       try {
+        // Step 1: try localStorage session (instant)
+        let userId: string | undefined
         const { data: { session } } = await supabase.auth.getSession()
-        if (session?.user) {
+        userId = session?.user?.id
+
+        // Step 2: if no session in localStorage, verify with server via cookie
+        // This handles the "closed browser and reopened" case where only
+        // the HTTP-only cookie exists (JS can't read it, but getUser() can)
+        if (!userId) {
+          const { data: { user } } = await supabase.auth.getUser()
+          userId = user?.id
+        }
+
+        if (userId) {
           const { data } = await supabase
-            .from('profiles').select('*').eq('id', session.user.id).single()
+            .from('profiles').select('*').eq('id', userId).single()
           if (mounted && data) setProfile(data as Profile)
         }
       } catch (err) {
@@ -42,9 +53,9 @@ export function ProfileProvider({ children }: { children: React.ReactNode }) {
       }
     }
 
-    loadFromSession()
+    loadProfile()
 
-    // Also listen for sign-in / sign-out / token refresh events
+    // Listen for future auth changes (login, logout, token refresh)
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
       if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED' || event === 'USER_UPDATED') {
         if (session?.user) {
