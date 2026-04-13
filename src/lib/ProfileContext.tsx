@@ -28,33 +28,24 @@ export function ProfileProvider({ children }: { children: React.ReactNode }) {
 
     async function loadProfile() {
       try {
-        let userId: string | undefined
-
-        // Step 1: fast path — read session from localStorage
-        const { data: { session } } = await supabase.auth.getSession()
-        userId = session?.user?.id
-
-        if (!userId) {
-          // Step 2: localStorage is empty (browser reopened, session cleared).
-          // refreshSession() sends the HTTP-only refresh token cookie to Supabase,
-          // gets back a new access token, and STORES it in the client's memory.
-          // This is critical — without this, the profiles query below runs without
-          // an auth header and RLS blocks it, returning null profile forever.
-          const { data: { session: refreshed } } = await supabase.auth.refreshSession()
-          userId = refreshed?.user?.id
-        }
-
-        if (userId) {
-          const { data, error } = await supabase
-            .from('profiles').select('*').eq('id', userId).single()
-          if (error) console.error('Profiles query error:', error.message)
-          if (mounted && data) setProfile(data as Profile)
+        // Primary path: call server-side API route which reads the session
+        // from HTTP-only cookies. This ALWAYS works — even when the browser
+        // was closed and reopened (localStorage cleared), because HTTP-only
+        // cookies are persistent and don't get wiped on browser close.
+        const res = await fetch('/api/profile', { credentials: 'include' })
+        if (res.ok) {
+          const { profile: data } = await res.json()
+          if (mounted && data) {
+            setProfile(data as Profile)
+            setLoading(false)
+            return
+          }
         }
       } catch (err) {
-        console.error('Profile load error:', err)
-      } finally {
-        if (mounted) setLoading(false)
+        console.error('Profile API error:', err)
       }
+
+      if (mounted) setLoading(false)
     }
 
     loadProfile()
