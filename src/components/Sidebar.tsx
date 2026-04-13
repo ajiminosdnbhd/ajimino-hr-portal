@@ -1,7 +1,7 @@
 'use client'
 
 import Link from 'next/link'
-import { usePathname, useRouter } from 'next/navigation'
+import { usePathname } from 'next/navigation'
 import { createBrowserClient } from '@supabase/ssr'
 import { Profile } from '@/lib/types'
 
@@ -72,7 +72,6 @@ const NAV_ITEMS = [
 
 export default function Sidebar({ profile }: { profile: Profile | null }) {
   const pathname = usePathname()
-  const router = useRouter()
 
   const handleLogout = async () => {
     const supabase = createBrowserClient(
@@ -80,7 +79,7 @@ export default function Sidebar({ profile }: { profile: Profile | null }) {
       process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
     )
     await supabase.auth.signOut()
-    router.push('/login')
+    window.location.href = '/login'
   }
 
   const visibleNav = NAV_ITEMS.filter(item => {
