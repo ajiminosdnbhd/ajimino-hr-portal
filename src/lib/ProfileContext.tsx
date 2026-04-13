@@ -26,30 +26,25 @@ export function ProfileProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     let mounted = true
 
-    async function load() {
-      try {
-        const { data: { session } } = await supabase.auth.getSession()
-        const userId = session?.user?.id
-        if (!userId) { if (mounted) setLoading(false); return }
-
-        const { data } = await supabase.from('profiles').select('*').eq('id', userId).single()
-        if (mounted && data) setProfile(data as Profile)
-      } catch (err) {
-        console.error('Profile load error:', err)
-      } finally {
-        if (mounted) setLoading(false)
-      }
-    }
-
-    load()
-
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
+    // onAuthStateChange fires INITIAL_SESSION immediately on mount with the
+    // restored cookie session — handles browser reopen without sign-out,
+    // fresh login, and logout all in one place.
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
       if (session?.user) {
-        const { data } = await supabase.from('profiles').select('*').eq('id', session.user.id).single()
-        if (mounted && data) setProfile(data as Profile)
+        try {
+          const { data } = await supabase
+            .from('profiles')
+            .select('*')
+            .eq('id', session.user.id)
+            .single()
+          if (mounted && data) setProfile(data as Profile)
+        } catch (err) {
+          console.error('Profile load error:', err)
+        }
       } else {
         if (mounted) setProfile(null)
       }
+      if (mounted) setLoading(false)
     })
 
     return () => { mounted = false; subscription.unsubscribe() }
