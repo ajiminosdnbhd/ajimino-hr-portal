@@ -31,71 +31,75 @@ export default function LoginPage() {
 
   return (
     <div className="min-h-screen flex">
-      {/* Left Panel — Dark Navy Branding */}
-      <div className="hidden lg:flex lg:w-1/2 bg-[#0f172a] relative overflow-hidden flex-col justify-center px-16">
+      {/* Left Panel */}
+      <div className="hidden lg:flex lg:w-[65%] bg-[#0d1229] relative overflow-hidden flex-col justify-between p-12">
         {/* Decorative rings */}
-        <div className="absolute -top-32 -left-32 w-96 h-96 rounded-full border border-slate-700/30" />
-        <div className="absolute -top-16 -left-16 w-80 h-80 rounded-full border border-slate-700/20" />
-        <div className="absolute -bottom-40 -right-40 w-[500px] h-[500px] rounded-full border border-slate-700/30" />
-        <div className="absolute -bottom-24 -right-24 w-96 h-96 rounded-full border border-indigo-500/10" />
+        <div className="absolute -top-40 -left-40 w-[500px] h-[500px] rounded-full border border-white/5" />
+        <div className="absolute -top-20 -left-20 w-96 h-96 rounded-full border border-white/5" />
+        <div className="absolute -bottom-48 -right-48 w-[600px] h-[600px] rounded-full border border-white/5" />
+        <div className="absolute -bottom-28 -right-28 w-[450px] h-[450px] rounded-full border border-indigo-500/10" />
 
-        <div className="relative z-10">
-          <div className="flex items-center gap-3 mb-8">
-            <div className="w-12 h-12 rounded-xl bg-indigo-600 flex items-center justify-center">
-              <span className="text-white font-bold text-xl">A</span>
-            </div>
-            <div>
-              <h1 className="text-white font-bold text-2xl">AJIMINO</h1>
-              <p className="text-slate-400 text-sm">SDN. BHD.</p>
-            </div>
+        {/* Logo — top left */}
+        <div className="relative z-10 flex items-center gap-3">
+          <div className="w-12 h-12 rounded-xl bg-indigo-600 flex items-center justify-center flex-shrink-0">
+            <span className="text-white font-bold text-xl">A</span>
           </div>
+          <div>
+            <p className="text-white font-bold text-lg leading-tight">AJIMINO SDN. BHD.</p>
+            <p className="text-slate-400 text-xs">More Than Just Fertilizer</p>
+          </div>
+        </div>
 
-          <h2 className="text-white text-3xl font-bold mb-4">
-            HR Management Portal
+        {/* Main Content — centered vertically */}
+        <div className="relative z-10 flex-1 flex flex-col justify-center py-16">
+          <h2 className="text-white text-5xl font-bold leading-tight mb-4">
+            Your complete<br />HR platform.
           </h2>
-          <p className="text-slate-400 text-base mb-10 max-w-md">
-            Streamline your human resource operations with our integrated management platform.
+          <p className="text-slate-400 text-base mb-12 max-w-lg">
+            Built for AJIMINO&apos;s team — manage leave, payslips, bookings and policies in one place.
           </p>
 
-          <div className="space-y-4">
+          <div className="space-y-5">
             {[
               { title: 'Room Booking', desc: 'Book meeting rooms with conflict detection' },
               { title: 'Leave Management', desc: 'Apply and track leave with approval workflows' },
               { title: 'Payslip Access', desc: 'View and download your monthly payslips' },
               { title: 'Company Policies', desc: 'Stay updated with the latest policies' },
             ].map((feature) => (
-              <div key={feature.title} className="flex items-start gap-3">
-                <div className="w-6 h-6 rounded-full bg-indigo-600/20 flex items-center justify-center mt-0.5 flex-shrink-0">
-                  <svg className="w-3 h-3 text-indigo-400" fill="currentColor" viewBox="0 0 20 20">
-                    <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+              <div key={feature.title} className="flex items-center gap-3">
+                <div className="w-5 h-5 rounded-full border border-slate-500 flex items-center justify-center flex-shrink-0">
+                  <svg className="w-3 h-3 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
                   </svg>
                 </div>
-                <div>
-                  <p className="text-white text-sm font-medium">{feature.title}</p>
-                  <p className="text-slate-500 text-xs">{feature.desc}</p>
-                </div>
+                <p className="text-slate-300 text-sm">{feature.title}</p>
               </div>
             ))}
           </div>
+        </div>
+
+        {/* Copyright — bottom left */}
+        <div className="relative z-10">
+          <p className="text-slate-600 text-xs">AJIMINO SDN. BHD. © {new Date().getFullYear()}</p>
         </div>
       </div>
 
       {/* Right Panel — Login Form */}
       <div className="flex-1 flex items-center justify-center p-8 bg-white">
-        <div className="w-full max-w-md">
+        <div className="w-full max-w-sm">
           {/* Mobile branding */}
           <div className="lg:hidden flex items-center gap-3 mb-8">
             <div className="w-10 h-10 rounded-xl bg-indigo-600 flex items-center justify-center">
               <span className="text-white font-bold text-lg">A</span>
             </div>
             <div>
-              <h1 className="font-bold text-lg">AJIMINO</h1>
-              <p className="text-slate-400 text-xs">SDN. BHD.</p>
+              <h1 className="font-bold text-lg">AJIMINO SDN. BHD.</h1>
+              <p className="text-slate-400 text-xs">More Than Just Fertilizer</p>
             </div>
           </div>
 
-          <h2 className="text-2xl font-bold text-slate-900 mb-1">Welcome back</h2>
-          <p className="text-slate-500 text-sm mb-8">Sign in to your HR portal account</p>
+          <h2 className="text-3xl font-bold text-slate-900 mb-1">Welcome back</h2>
+          <p className="text-slate-400 text-sm mb-8">Sign in to your account</p>
 
           <form onSubmit={handleLogin} className="space-y-5">
             <div>
@@ -137,7 +141,7 @@ export default function LoginPage() {
             </button>
           </form>
 
-          <p className="text-center text-slate-400 text-xs mt-8">
+          <p className="text-center text-slate-400 text-xs mt-10">
             AJIMINO SDN. BHD. &copy; {new Date().getFullYear()}
           </p>
         </div>
