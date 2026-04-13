@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { AlertCircle, Loader2, CheckCircle2, Eye, EyeOff } from 'lucide-react'
+import Image from 'next/image'
 
 export default function LoginPage() {
   const router = useRouter()
@@ -75,8 +76,8 @@ export default function LoginPage() {
         {/* Logo */}
         <div className="relative z-10">
           <div className="flex items-center gap-3">
-            <div className="flex items-center justify-center w-10 h-10 rounded-xl shrink-0 bg-indigo-600">
-              <span className="text-white font-black text-xl">A</span>
+            <div className="flex items-center justify-center w-10 h-10 rounded-xl shrink-0 overflow-hidden bg-white">
+              <Image src="/Ajimino-logo-colour-FA-01.jpg" alt="AJIMINO logo" width={40} height={40} className="object-contain" />
             </div>
             <div className="flex flex-col leading-none">
               <span className="font-black text-xl tracking-wide text-white select-none">AJIMINO SDN. BHD.</span>
@@ -115,8 +116,8 @@ export default function LoginPage() {
 
         {/* Mobile-only logo */}
         <div className="lg:hidden flex items-center gap-2.5 mb-10">
-          <div className="flex items-center justify-center w-9 h-9 rounded-xl bg-indigo-600">
-            <span className="text-white font-black text-lg">A</span>
+          <div className="flex items-center justify-center w-9 h-9 rounded-xl overflow-hidden bg-white border" style={{ borderColor: '#E5E7EB' }}>
+            <Image src="/Ajimino-logo-colour-FA-01.jpg" alt="AJIMINO logo" width={36} height={36} className="object-contain" />
           </div>
           <span className="font-black text-lg tracking-wide" style={{ color: '#0F1B3C' }}>AJIMINO SDN. BHD.</span>
         </div>
