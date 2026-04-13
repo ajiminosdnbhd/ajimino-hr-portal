@@ -321,11 +321,21 @@ export default function LeavePage() {
                     />
                   </div>
                 </div>
-                {formStart && formEnd && (
-                  <p className="text-xs text-indigo-600 font-medium">
-                    {calculateDays(formStart, formEnd)} working day(s)
-                  </p>
-                )}
+                {formStart && formEnd && (() => {
+                  const days = calculateDays(formStart, formEnd)
+                  const balance = formType === 'Annual Leave' ? alBalance : mlBalance
+                  const remaining = balance - days
+                  return (
+                    <div className="bg-slate-50 rounded-xl px-4 py-3 flex items-center justify-between text-sm">
+                      <span className="text-slate-500">
+                        <span className="font-semibold text-slate-800">{days}</span> working day(s) applied
+                      </span>
+                      <span className={`font-semibold ${remaining < 0 ? 'text-red-500' : remaining <= 2 ? 'text-amber-500' : 'text-emerald-600'}`}>
+                        {remaining < 0 ? `Exceeds by ${Math.abs(remaining)}d` : `${remaining}d left after`}
+                      </span>
+                    </div>
+                  )
+                })()}
                 <div>
                   <label className="block text-sm font-medium text-slate-700 mb-1">Reason</label>
                   <textarea
