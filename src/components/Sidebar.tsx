@@ -163,17 +163,29 @@ export default function Sidebar({ profile }: { profile: Profile | null }) {
 
   return (
     <>
-      {/* Hamburger button — mobile only */}
-      <button
-        className="md:hidden fixed top-4 left-4 z-[60] p-2 text-white rounded-lg shadow-lg"
+      {/* Mobile top bar — fixed at top, full width, same dark color as sidebar */}
+      <div
+        className="md:hidden fixed top-0 left-0 right-0 h-14 z-[60] flex items-center px-4 gap-3"
         style={{ background: '#0A1128' }}
-        onClick={() => setMobileOpen(true)}
-        aria-label="Open menu"
       >
-        <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-          <path strokeLinecap="round" strokeLinejoin="round" d="M4 6h16M4 12h16M4 18h16" />
-        </svg>
-      </button>
+        <button
+          onClick={() => setMobileOpen(true)}
+          aria-label="Open menu"
+          className="p-1.5 rounded-lg"
+          style={{ color: 'rgba(255,255,255,0.7)' }}
+        >
+          <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M4 6h16M4 12h16M4 18h16" />
+          </svg>
+        </button>
+        <div className="w-7 h-7 rounded-lg overflow-hidden flex-shrink-0" style={{ background: '#FFFFFF', padding: 2 }}>
+          <img src="/Ajimino-logo-colour-FA-01.jpg" alt="AJIMINO Logo" className="w-full h-full object-contain" />
+        </div>
+        <div className="flex flex-col leading-none">
+          <span className="font-bold text-sm text-white tracking-wide">AJIMINO</span>
+          <span className="text-[10px]" style={{ color: 'rgba(255,255,255,0.45)' }}>HR Portal</span>
+        </div>
+      </div>
 
       {/* Desktop sidebar — always visible on md+ */}
       <div className="hidden md:block">
