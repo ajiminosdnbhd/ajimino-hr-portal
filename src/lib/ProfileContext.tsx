@@ -26,25 +26,35 @@ export function ProfileProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     let mounted = true
 
-    // onAuthStateChange fires INITIAL_SESSION immediately on mount with the
-    // restored cookie session — handles browser reopen without sign-out,
-    // fresh login, and logout all in one place.
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
-      if (session?.user) {
-        try {
+    // Fast path: load profile immediately from existing session cookie
+    async function loadFromSession() {
+      try {
+        const { data: { session } } = await supabase.auth.getSession()
+        if (session?.user) {
           const { data } = await supabase
-            .from('profiles')
-            .select('*')
-            .eq('id', session.user.id)
-            .single()
+            .from('profiles').select('*').eq('id', session.user.id).single()
           if (mounted && data) setProfile(data as Profile)
-        } catch (err) {
-          console.error('Profile load error:', err)
         }
-      } else {
-        if (mounted) setProfile(null)
+      } catch (err) {
+        console.error('Profile load error:', err)
+      } finally {
+        if (mounted) setLoading(false)
       }
-      if (mounted) setLoading(false)
+    }
+
+    loadFromSession()
+
+    // Also listen for sign-in / sign-out / token refresh events
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+      if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED' || event === 'USER_UPDATED') {
+        if (session?.user) {
+          const { data } = await supabase
+            .from('profiles').select('*').eq('id', session.user.id).single()
+          if (mounted && data) { setProfile(data as Profile); setLoading(false) }
+        }
+      } else if (event === 'SIGNED_OUT') {
+        if (mounted) { setProfile(null); setLoading(false) }
+      }
     })
 
     return () => { mounted = false; subscription.unsubscribe() }
