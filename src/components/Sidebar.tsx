@@ -93,7 +93,10 @@ export default function Sidebar({ profile }: { profile: Profile | null }) {
   })
 
   const sidebarContent = (
-    <aside className="fixed left-0 top-0 h-screen w-[200px] flex flex-col z-50" style={{ background: '#0A1128' }}>
+    <aside
+      className="fixed left-0 top-0 h-screen w-[200px] flex flex-col z-50 transition-transform duration-300 ease-in-out"
+      style={{ background: '#0A1128' }}
+    >
 
       {/* Logo — same style as CRM */}
       <div className="flex items-center gap-3 px-5 py-5 shrink-0">
@@ -172,18 +175,82 @@ export default function Sidebar({ profile }: { profile: Profile | null }) {
         </svg>
       </button>
 
-      {/* Desktop sidebar */}
+      {/* Desktop sidebar — always visible on md+ */}
       <div className="hidden md:block">
         {sidebarContent}
       </div>
 
-      {/* Mobile sidebar */}
-      {mobileOpen && (
-        <div className="md:hidden">
-          <div className="fixed inset-0 bg-black/50 z-40" onClick={() => setMobileOpen(false)} />
-          {sidebarContent}
-        </div>
-      )}
+      {/* Mobile sidebar — always in DOM, slides in/out with CSS */}
+      <div className="md:hidden">
+        {/* Backdrop */}
+        <div
+          className="fixed inset-0 bg-black/50 z-40 transition-opacity duration-300"
+          style={{ opacity: mobileOpen ? 1 : 0, pointerEvents: mobileOpen ? 'auto' : 'none' }}
+          onClick={() => setMobileOpen(false)}
+        />
+        {/* Sidebar panel — slides from left */}
+        <aside
+          className="fixed left-0 top-0 h-screen w-[200px] flex flex-col z-50 transition-transform duration-300 ease-in-out"
+          style={{
+            background: '#0A1128',
+            transform: mobileOpen ? 'translateX(0)' : 'translateX(-100%)',
+          }}
+        >
+          {/* Logo */}
+          <div className="flex items-center gap-3 px-5 py-5 shrink-0">
+            <div className="w-9 h-9 rounded-xl shrink-0 overflow-hidden flex items-center justify-center" style={{ background: '#FFFFFF', padding: 3 }}>
+              <img src="/Ajimino-logo-colour-FA-01.jpg" alt="AJIMINO Logo" width={36} height={36} className="object-contain w-full h-full" />
+            </div>
+            <div className="flex flex-col leading-none">
+              <span className="font-bold text-sm text-white tracking-wide">AJIMINO</span>
+              <span className="text-[11px] font-medium mt-0.5" style={{ color: 'rgba(255,255,255,0.45)' }}>HR Portal</span>
+            </div>
+          </div>
+
+          {/* Nav */}
+          <nav className="flex-1 py-2 px-3 space-y-1 overflow-y-auto">
+            {visibleNav.map(item => {
+              const isActive = pathname === item.href
+              const Icon = item.icon
+              return (
+                <Link
+                  key={item.href}
+                  href={item.href}
+                  onClick={() => setMobileOpen(false)}
+                  className="flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all duration-150"
+                  style={isActive ? { background: '#4338CA', color: '#FFFFFF' } : { color: 'rgba(255,255,255,0.5)' }}
+                >
+                  <Icon className="w-[18px] h-[18px] flex-shrink-0" />
+                  {item.label}
+                </Link>
+              )
+            })}
+          </nav>
+
+          {/* User + Logout */}
+          <div className="px-3 pb-5 shrink-0" style={{ borderTop: '1px solid rgba(255,255,255,0.06)' }}>
+            {profile && (
+              <div className="flex items-center gap-2.5 px-2 py-2.5 rounded-xl mt-3" style={{ background: 'rgba(255,255,255,0.06)' }}>
+                <div className="flex items-center justify-center w-8 h-8 rounded-full text-xs font-bold shrink-0 text-white" style={{ background: '#4338CA' }}>
+                  {profile.name?.charAt(0).toUpperCase()}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-semibold truncate leading-tight text-white">{profile.name}</p>
+                  <p className="text-[10px] font-medium capitalize" style={{ color: 'rgba(255,255,255,0.4)' }}>{profile.role}</p>
+                </div>
+              </div>
+            )}
+            <button
+              onClick={handleLogout}
+              className="w-full flex items-center gap-3 px-3 py-2 rounded-xl text-sm font-medium transition-all duration-150 mt-1"
+              style={{ color: 'rgba(255,255,255,0.5)' }}
+            >
+              <LogoutIcon className="w-[18px] h-[18px]" />
+              Logout
+            </button>
+          </div>
+        </aside>
+      </div>
     </>
   )
 }

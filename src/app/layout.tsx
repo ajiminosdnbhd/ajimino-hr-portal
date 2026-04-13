@@ -1,5 +1,6 @@
 import type { Metadata } from 'next'
 import './globals.css'
+import { ProfileProvider } from '@/lib/ProfileContext'
 
 export const metadata: Metadata = {
   title: 'AJIMINO SDN. BHD. — HR Portal',
@@ -22,7 +23,9 @@ export default function RootLayout({
         />
       </head>
       <body className="antialiased">
-        {children}
+        <ProfileProvider>
+          {children}
+        </ProfileProvider>
       </body>
     </html>
   )
