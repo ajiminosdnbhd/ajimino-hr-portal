@@ -55,7 +55,7 @@ export default function DashboardPage() {
     if (!profile) return
     const today = new Date().toISOString().split('T')[0]
     const filters = isHrOrMgmt ? [] : [
-      { type: 'or' as const, val: `visibility.eq.all,and(visibility.eq.department,target_department.eq.${profile.department}),and(visibility.eq.individual,target_user_ids.cs.{${profile.id}})` }
+      { type: 'or' as const, val: `visibility.eq.all,visibility.eq.department,and(visibility.eq.individual,target_user_ids.cs.{${profile.id}})` }
     ]
     const { data } = await adminRead<CalendarEvent>('events', {
       filters: [{ type: 'gte', col: 'date', val: today }, ...filters],
