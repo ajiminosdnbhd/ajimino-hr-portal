@@ -704,38 +704,63 @@ export default function PlannerPage() {
                     </div>
                   )}
 
-                  {/* Events — show title with time */}
+                  {/* Events */}
                   {dayEvents.slice(0, 2).map(ev => (
-                    <div key={ev.id} className="text-[9px] font-medium truncate rounded px-1 py-0.5 leading-tight mb-0.5"
-                      style={{ backgroundColor: ev.color + '22', color: ev.color }}>
-                      {ev.event_time ? `${ev.event_time.slice(0, 5)} ` : ''}{ev.title}
+                    <div key={ev.id} className="mb-0.5 rounded overflow-hidden"
+                      style={{ borderLeft: `3px solid ${ev.color}`, backgroundColor: ev.color + '18' }}>
+                      <div className="px-1 py-0.5">
+                        <div className="text-[9px] font-bold leading-tight truncate" style={{ color: ev.color }}>
+                          {ev.event_time ? ev.event_time.slice(0, 5) + ' · ' : ''}{ev.title}
+                        </div>
+                        <div className="text-[8px] text-slate-400 leading-tight truncate">by {ev.created_by.split(' ')[0]}</div>
+                      </div>
                     </div>
                   ))}
                   {dayEvents.length > 2 && (
-                    <div className="text-[9px] text-slate-400 px-1">+{dayEvents.length - 2} event{dayEvents.length - 2 > 1 ? 's' : ''}</div>
+                    <div className="text-[8px] text-slate-400 px-1 mb-0.5">+{dayEvents.length - 2} more event{dayEvents.length - 2 > 1 ? 's' : ''}</div>
                   )}
 
-                  {/* Leaves — show first name for HR/Mgmt, AL/ML for staff */}
+                  {/* Leaves */}
                   {dayLeaves.slice(0, 2).map(l => (
-                    <div key={l.id} className={`text-[9px] font-medium truncate rounded px-1 leading-tight py-0.5 mb-0.5 ${
-                      l.status === 'approved' ? 'bg-emerald-200 text-emerald-800' :
-                      l.status === 'rejected' ? 'bg-red-100 text-red-700' : 'bg-amber-100 text-amber-800'
+                    <div key={l.id} className={`mb-0.5 rounded overflow-hidden border-l-[3px] ${
+                      l.status === 'approved' ? 'border-emerald-500 bg-emerald-50' :
+                      l.status === 'rejected' ? 'border-red-400 bg-red-50' : 'border-amber-400 bg-amber-50'
                     }`}>
-                      {isHrOrMgmt ? l.user_name.split(' ')[0] : l.type === 'Annual Leave' ? 'AL' : 'ML'}
+                      <div className="px-1 py-0.5">
+                        <div className={`text-[9px] font-bold leading-tight truncate ${
+                          l.status === 'approved' ? 'text-emerald-700' :
+                          l.status === 'rejected' ? 'text-red-600' : 'text-amber-700'
+                        }`}>
+                          {isHrOrMgmt ? l.user_name.split(' ')[0] : (l.type === 'Annual Leave' ? 'Annual Leave' : 'Medical Leave')}
+                        </div>
+                        <div className="text-[8px] text-slate-400 leading-tight truncate">
+                          {l.type === 'Annual Leave' ? 'AL' : 'ML'} · {l.status}
+                        </div>
+                      </div>
                     </div>
                   ))}
                   {dayLeaves.length > 2 && (
-                    <div className="text-[9px] text-slate-400 px-1">+{dayLeaves.length - 2} leave{dayLeaves.length - 2 > 1 ? 's' : ''}</div>
+                    <div className="text-[8px] text-slate-400 px-1 mb-0.5">+{dayLeaves.length - 2} more leave{dayLeaves.length - 2 > 1 ? 's' : ''}</div>
                   )}
 
-                  {/* Bookings — show room + time */}
-                  {dayBookings.slice(0, 2).map(b => (
-                    <div key={b.id} className="text-[9px] font-medium truncate rounded px-1 py-0.5 bg-blue-100 text-blue-700 leading-tight mb-0.5">
-                      {ROOMS.find(r => r.id === b.room_id)?.name.split(' ')[0] || '?'} {b.start_time.slice(0, 5)}
-                    </div>
-                  ))}
+                  {/* Bookings */}
+                  {dayBookings.slice(0, 2).map(b => {
+                    const room = ROOMS.find(r => r.id === b.room_id)
+                    const roomShort = room?.name.replace(' Meeting Room', '').replace(' Room', '') || '?'
+                    return (
+                      <div key={b.id} className="mb-0.5 rounded overflow-hidden border-l-[3px] bg-blue-50"
+                        style={{ borderLeftColor: room?.color || '#3b82f6' }}>
+                        <div className="px-1 py-0.5">
+                          <div className="text-[9px] font-bold leading-tight truncate text-blue-700">
+                            {roomShort} · {b.start_time.slice(0, 5)}
+                          </div>
+                          <div className="text-[8px] text-slate-400 leading-tight truncate">by {b.user_name.split(' ')[0]}</div>
+                        </div>
+                      </div>
+                    )
+                  })}
                   {dayBookings.length > 2 && (
-                    <div className="text-[9px] text-slate-400 px-1">+{dayBookings.length - 2} room</div>
+                    <div className="text-[8px] text-slate-400 px-1 mb-0.5">+{dayBookings.length - 2} more booking{dayBookings.length - 2 > 1 ? 's' : ''}</div>
                   )}
                 </div>
               )
