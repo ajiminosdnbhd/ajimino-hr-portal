@@ -86,6 +86,9 @@ export interface CalendarEvent {
   // Ownership — used to determine if current user can edit/delete
   created_by_id: string | null
   created_by_role: 'management' | 'hr' | 'staff' | null
+  room_id: string | null
+  participant_ids: string[] | null
+  participant_names: string[] | null
 }
 
 export const ROOMS = [

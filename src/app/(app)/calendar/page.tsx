@@ -44,7 +44,7 @@ export default function PlannerPage() {
   const [month, setMonth] = useState(new Date().getMonth())
   const [year, setYear] = useState(new Date().getFullYear())
   const [selectedDate, setSelectedDate] = useState<string | null>(null)
-  const [activeForm, setActiveForm] = useState<'event' | 'booking' | null>(null)
+  const [activeForm, setActiveForm] = useState<'event' | null>(null)
   const [exporting, setExporting] = useState(false)
 
   const [events, setEvents] = useState<CalendarEvent[]>([])
@@ -67,16 +67,8 @@ export default function PlannerPage() {
   const [formTimeMode, setFormTimeMode] = useState<'allday' | 'custom'>('allday')
   const [formError, setFormError] = useState('')
   const [saving, setSaving] = useState(false)
-
-  // Booking form
-  const [bkDate, setBkDate] = useState('')
-  const [bkRoom, setBkRoom] = useState<string>(ROOMS[0].id)
-  const [bkStart, setBkStart] = useState('09:00')
-  const [bkEnd, setBkEnd] = useState('10:00')
-  const [bkPurpose, setBkPurpose] = useState('')
-  const [bkAttendeeIds, setBkAttendeeIds] = useState<string[]>([])
-  const [bkError, setBkError] = useState('')
-  const [bkSaving, setBkSaving] = useState(false)
+  const [formRoomId, setFormRoomId] = useState('')
+  const [formParticipantIds, setFormParticipantIds] = useState<string[]>([])
 
   const isMgmt = profile?.role === 'management'
   const isHrOrMgmt = profile && (profile.role === 'hr' || profile.role === 'management')
@@ -157,33 +149,13 @@ export default function PlannerPage() {
     return ev.created_by_id === profile.id
   }
 
-  // Management: cancel any booking
-  // HR: cancel own + staff bookings (NOT bookings by management users)
-  // Staff: cancel own only
-  function canCancelBooking(b: Booking) {
-    if (!profile) return false
-    if (profile.role === 'management') return true
-    if (profile.role === 'hr') {
-      const booker = allProfiles.find(p => p.id === b.user_id)
-      return booker?.role !== 'management'
-    }
-    return b.user_id === profile.id
-  }
-
-  function getBookingConflicts() {
-    return bookings.filter(
-      b => b.date === bkDate && b.room_id === bkRoom &&
-        b.start_time < bkEnd && b.end_time > bkStart
-    )
-  }
-
   // ── Event form helpers ───────────────────────────────────────────────────
   function openAddEvent(date?: string) {
     setEditingEvent(null)
     setFormDate(date || new Date().toISOString().split('T')[0])
     setFormTitle(''); setFormTime('09:00'); setFormEndTime('10:00'); setFormDesc('')
     setFormColor('#4f46e5'); setFormVisibility('all'); setFormDept(''); setFormUserIds([])
-    setFormTimeMode('allday'); setFormError(''); setActiveForm('event')
+    setFormTimeMode('allday'); setFormError(''); setFormRoomId(''); setFormParticipantIds([]); setActiveForm('event')
   }
 
   function openEditEvent(ev: CalendarEvent) {
@@ -195,6 +167,7 @@ export default function PlannerPage() {
     setFormVisibility(ev.visibility || 'all')
     setFormDept(ev.target_department || ''); setFormUserIds(ev.target_user_ids || [])
     setFormTimeMode(ev.event_time ? 'custom' : 'allday')
+    setFormRoomId(ev.room_id || ''); setFormParticipantIds(ev.participant_ids || [])
     setFormError(''); setActiveForm('event')
   }
 
@@ -203,13 +176,72 @@ export default function PlannerPage() {
     setFormTitle(''); setFormDate(''); setFormTime('09:00'); setFormEndTime('10:00'); setFormDesc('')
     setFormColor('#4f46e5'); setFormVisibility('all'); setFormDept(''); setFormUserIds([])
     setFormTimeMode('allday'); setFormError('')
-    setBkError(''); setBkPurpose(''); setBkAttendeeIds([]); setBkRoom(ROOMS[0].id); setBkStart('09:00'); setBkEnd('10:00')
+    setFormRoomId(''); setFormParticipantIds([])
   }
 
   async function handleSubmitEvent(e: React.FormEvent) {
     e.preventDefault(); setFormError(''); setSaving(true)
     if (!profile) { setSaving(false); return }
+
+    // Room or participants require a specific time
+    if ((formRoomId || formParticipantIds.length > 0) && formTimeMode === 'allday') {
+      setFormError('Please set a specific start and end time when booking a room or adding participants.')
+      setSaving(false); return
+    }
+
     try {
+      // ── Room conflict check ──────────────────────────────────────────────
+      if (formRoomId && formTimeMode === 'custom') {
+        // Check against events with room_id
+        const { data: evtRoom } = await adminRead<CalendarEvent>('events', {
+          filters: [{ type: 'eq', col: 'date', val: formDate }, { type: 'eq', col: 'room_id', val: formRoomId }],
+        })
+        const roomEvtClash = evtRoom
+          .filter(ev => editingEvent ? ev.id !== editingEvent.id : true)
+          .find(ev => ev.event_time && ev.event_end_time && ev.event_time < formEndTime && ev.event_end_time > formTime)
+        if (roomEvtClash) {
+          const rName = ROOMS.find(r => r.id === formRoomId)?.name || 'Room'
+          setFormError(`${rName} is already booked ${roomEvtClash.event_time?.slice(0,5)}–${roomEvtClash.event_end_time?.slice(0,5)} by ${roomEvtClash.created_by}.`)
+          setSaving(false); return
+        }
+        // Also check legacy bookings table
+        const { data: bkRoom } = await adminRead<Booking>('bookings', {
+          filters: [{ type: 'eq', col: 'date', val: formDate }, { type: 'eq', col: 'room_id', val: formRoomId }],
+        })
+        const bkClash = bkRoom.find(b => b.start_time < formEndTime && b.end_time > formTime)
+        if (bkClash) {
+          const rName = ROOMS.find(r => r.id === formRoomId)?.name || 'Room'
+          setFormError(`${rName} is already booked ${bkClash.start_time.slice(0,5)}–${bkClash.end_time.slice(0,5)} by ${bkClash.user_name}.`)
+          setSaving(false); return
+        }
+      }
+
+      // ── Participant availability check ───────────────────────────────────
+      if (formParticipantIds.length > 0 && formTimeMode === 'custom') {
+        const { data: sameDay } = await adminRead<CalendarEvent>('events', {
+          filters: [{ type: 'eq', col: 'date', val: formDate }],
+        })
+        const clashing = sameDay
+          .filter(ev => editingEvent ? ev.id !== editingEvent.id : true)
+          .filter(ev => ev.event_time && ev.event_end_time && ev.event_time < formEndTime && ev.event_end_time > formTime)
+        const busyNames: string[] = []
+        for (const pid of formParticipantIds) {
+          const conflict = clashing.find(ev =>
+            ev.created_by_id === pid || ev.participant_ids?.includes(pid)
+          )
+          if (conflict) {
+            const person = allProfiles.find(p => p.id === pid)
+            if (person) busyNames.push(person.name.split(' ')[0])
+          }
+        }
+        if (busyNames.length > 0) {
+          setFormError(`${busyNames.join(', ')} ${busyNames.length === 1 ? 'is' : 'are'} already scheduled at this time.`)
+          setSaving(false); return
+        }
+      }
+
+      const participantNames = formParticipantIds.map(pid => allProfiles.find(p => p.id === pid)?.name || pid)
+
       const payload = {
         title: formTitle, date: formDate,
         event_time: formTimeMode === 'custom' ? formTime : null,
@@ -219,6 +251,9 @@ export default function PlannerPage() {
         visibility: formVisibility,
         target_department: formVisibility === 'department' ? formDept : null,
         target_user_ids: formVisibility === 'individual' ? formUserIds : null,
+        room_id: formRoomId || null,
+        participant_ids: formParticipantIds.length > 0 ? formParticipantIds : null,
+        participant_names: formParticipantIds.length > 0 ? participantNames : null,
       }
       const res = editingEvent
         ? await supabase.from('events').update(payload).eq('id', editingEvent.id)
@@ -234,64 +269,6 @@ export default function PlannerPage() {
 
   async function handleDeleteEvent(id: string) {
     await supabase.from('events').delete().eq('id', id)
-    loadMonthData()
-  }
-
-  // ── Booking form helpers ─────────────────────────────────────────────────
-  function openBookingForm(date?: string) {
-    setBkDate(date || new Date().toISOString().split('T')[0])
-    setBkRoom(ROOMS[0].id); setBkStart('09:00'); setBkEnd('10:00')
-    setBkPurpose(''); setBkAttendeeIds([]); setBkError(''); setActiveForm('booking')
-  }
-
-  async function handleSubmitBooking(e: React.FormEvent) {
-    e.preventDefault(); setBkError(''); setBkSaving(true)
-    if (!profile) { setBkSaving(false); return }
-    if (bkStart >= bkEnd) { setBkError('End time must be after start time'); setBkSaving(false); return }
-    try {
-      // Live server-side check — catches duplicates even if local state is stale
-      const { data: existing } = await adminRead<Booking>('bookings', {
-        filters: [
-          { type: 'eq', col: 'date', val: bkDate },
-          { type: 'eq', col: 'room_id', val: bkRoom },
-        ],
-      })
-
-      // Same person, same room, same exact time = duplicate
-      const isDuplicate = existing.some(
-        b => b.user_id === profile.id && b.start_time === bkStart && b.end_time === bkEnd
-      )
-      if (isDuplicate) {
-        setBkError('You already have this exact booking.')
-        setBkSaving(false); return
-      }
-
-      // Any overlap on this room = conflict (regardless of who booked)
-      const hasConflict = existing.some(b => b.start_time < bkEnd && b.end_time > bkStart)
-      if (hasConflict) {
-        const clash = existing.find(b => b.start_time < bkEnd && b.end_time > bkStart)!
-        setBkError(`${ROOMS.find(r => r.id === bkRoom)?.name || 'Room'} is already booked ${clash.start_time.slice(0,5)}–${clash.end_time.slice(0,5)} by ${clash.user_name}.`)
-        setBkSaving(false); return
-      }
-
-      const attendees = allProfiles.filter(p => bkAttendeeIds.includes(p.id))
-      const { error } = await supabase.from('bookings').insert({
-        user_id: profile.id, user_name: profile.name, department: profile.department,
-        room_id: bkRoom, date: bkDate, start_time: bkStart, end_time: bkEnd, purpose: bkPurpose,
-        attendee_ids: bkAttendeeIds.length > 0 ? bkAttendeeIds : null,
-        attendee_names: attendees.length > 0 ? attendees.map(p => p.name) : null,
-      })
-      if (error) { setBkError(error.message); return }
-      closeForm(); loadMonthData()
-    } catch (err: unknown) {
-      setBkError(err instanceof Error ? err.message : 'An error occurred')
-    } finally {
-      setBkSaving(false)
-    }
-  }
-
-  async function handleCancelBooking(id: string) {
-    await supabase.from('bookings').delete().eq('id', id)
     loadMonthData()
   }
 
@@ -600,8 +577,6 @@ export default function PlannerPage() {
   const selBookings = selectedDate ? getForDate(bookings, selectedDate, 'date') : []
   const selHoliday = selectedDate ? isHoliday(selectedDate) : undefined
 
-  const bkConflicts = activeForm === 'booking' ? getBookingConflicts() : []
-
   return (
     <>
       {/* ── Header ────────────────────────────────────────────────────── */}
@@ -611,7 +586,7 @@ export default function PlannerPage() {
           {loadError && <LoadError message={loadError} />}
           <p className="text-slate-500 text-sm mt-1">
             {isHrOrMgmt
-              ? `${events.length} event(s) · ${leaves.filter(l => l.status === 'approved').length} approved leave(s) · ${bookings.length} booking(s) this month`
+              ? `${events.length} event(s) · ${leaves.filter(l => l.status === 'approved').length} approved leave(s) · ${events.filter(ev => ev.room_id).length} room booking(s) this month`
               : 'Your schedule — events, leaves, and bookings'}
           </p>
         </div>
@@ -640,11 +615,6 @@ export default function PlannerPage() {
               Apply Leave
             </Link>
           )}
-          <button onClick={() => openBookingForm()}
-            className="flex items-center gap-2 border border-gray-200 bg-white hover:bg-slate-50 text-slate-700 font-semibold px-4 py-2.5 rounded-xl transition text-sm">
-            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
-            Book Room
-          </button>
           <button onClick={() => openAddEvent()}
             className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold px-5 py-2.5 rounded-xl transition text-sm">
             + Add Event
@@ -739,7 +709,9 @@ export default function PlannerPage() {
                         <div className="text-[9px] font-bold leading-tight truncate" style={{ color: ev.color }}>
                           {ev.event_time ? ev.event_time.slice(0, 5) + ' · ' : ''}{ev.title}
                         </div>
-                        <div className="text-[8px] text-slate-400 leading-tight truncate">by {ev.created_by.split(' ')[0]}</div>
+                        <div className="text-[8px] text-slate-400 leading-tight truncate">
+                          {ev.room_id ? ROOMS.find(r => r.id === ev.room_id)?.name.replace(' Meeting Room','').replace(' Room','') : `by ${ev.created_by.split(' ')[0]}`}
+                        </div>
                       </div>
                     </div>
                   ))}
@@ -842,6 +814,19 @@ export default function PlannerPage() {
                           <p className="text-[10px] text-slate-400 mt-0.5">
                             {ev.visibility === 'all' ? 'All staff' : ev.visibility === 'department' ? `${ev.target_department} dept` : 'Specific staff'} · by {ev.created_by}
                           </p>
+                          {ev.room_id && (
+                            <div className="flex items-center gap-1.5 mt-1">
+                              <div className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: ROOMS.find(r => r.id === ev.room_id)?.color || '#3b82f6' }} />
+                              <p className="text-[10px] font-semibold text-blue-600">{ROOMS.find(r => r.id === ev.room_id)?.name || ev.room_id}</p>
+                            </div>
+                          )}
+                          {ev.participant_names && ev.participant_names.length > 0 && (
+                            <div className="mt-1.5 flex flex-wrap gap-1">
+                              {ev.participant_names.map((name, i) => (
+                                <span key={i} className="text-[9px] font-medium bg-indigo-50 text-indigo-600 px-1.5 py-0.5 rounded-full">{name.split(' ')[0]}</span>
+                              ))}
+                            </div>
+                          )}
                         </div>
                         {canModifyEvent(ev) && (
                           <div className="flex gap-1 flex-shrink-0">
@@ -920,8 +905,8 @@ export default function PlannerPage() {
                               <div className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: room?.color || '#3b82f6' }} />
                               <p className="text-xs font-semibold text-slate-900">{room?.name || b.room_id}</p>
                             </div>
-                            {canCancelBooking(b) && (
-                              <button onClick={() => handleCancelBooking(b.id)}
+                            {(profile?.role === 'management' || b.user_id === profile?.id) && (
+                              <button onClick={async () => { await supabase.from('bookings').delete().eq('id', b.id); loadMonthData() }}
                                 className="text-[10px] text-red-500 hover:text-red-700 font-semibold transition">
                                 Cancel
                               </button>
@@ -957,10 +942,6 @@ export default function PlannerPage() {
                 <button onClick={() => openAddEvent(selectedDate)}
                   className="flex-1 px-3 py-2 bg-indigo-50 text-indigo-600 text-xs font-semibold rounded-xl hover:bg-indigo-100 transition">
                   + Event
-                </button>
-                <button onClick={() => openBookingForm(selectedDate)}
-                  className="flex-1 px-3 py-2 bg-blue-50 text-blue-600 text-xs font-semibold rounded-xl hover:bg-blue-100 transition">
-                  + Book Room
                 </button>
               </div>
             </div>
@@ -1012,211 +993,189 @@ export default function PlannerPage() {
         </div>
       </div>
 
-      {/* ── Event Form Modal ──────────────────────────────────────────── */}
+      {/* Unified Event Form Modal */}
       {activeForm === 'event' && (
-        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 px-4">
-          <div className="bg-white rounded-2xl p-6 w-full max-w-md max-h-[90vh] overflow-y-auto shadow-2xl">
-            <div className="flex items-center justify-between mb-5">
-              <h2 className="text-lg font-bold text-slate-900">{editingEvent ? 'Edit Event' : 'Add Event'}</h2>
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl w-full max-w-lg max-h-[92vh] overflow-y-auto shadow-xl">
+            <div className="flex items-center justify-between p-5 border-b border-gray-100">
+              <h2 className="text-base font-bold text-slate-900">
+                {editingEvent ? 'Edit Event' : '+ New Event'}
+              </h2>
               <button onClick={closeForm} className="text-slate-400 hover:text-slate-600">
                 <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
               </button>
             </div>
-            <form onSubmit={handleSubmitEvent} className="space-y-4">
+            <form onSubmit={handleSubmitEvent} className="p-5 space-y-4">
+
+              {/* Title */}
               <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">Title</label>
+                <label className="block text-xs font-semibold text-slate-600 mb-1">Event Title *</label>
                 <input type="text" value={formTitle} onChange={e => setFormTitle(e.target.value)} required
+                  placeholder="e.g. Team Meeting, Client Call..."
                   className="w-full px-3 py-2.5 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" />
               </div>
+
+              {/* Date */}
               <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">Date</label>
+                <label className="block text-xs font-semibold text-slate-600 mb-1">Date *</label>
                 <input type="date" value={formDate} onChange={e => setFormDate(e.target.value)} required
                   className="w-full px-3 py-2.5 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" />
               </div>
+
+              {/* Time */}
               <div>
-                <label className="block text-sm font-medium text-slate-700 mb-2">Time</label>
-                <div className="flex gap-2 mb-3">
+                <label className="block text-xs font-semibold text-slate-600 mb-2">Time</label>
+                <div className="flex gap-3 mb-2">
                   {(['allday', 'custom'] as const).map(mode => (
-                    <button key={mode} type="button" onClick={() => setFormTimeMode(mode)}
-                      className={`flex-1 py-2 rounded-xl text-xs font-semibold border transition ${formTimeMode === mode ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-slate-600 border-gray-200 hover:border-indigo-300'}`}>
-                      {mode === 'allday' ? 'Whole Day' : 'Custom Time'}
-                    </button>
+                    <label key={mode} className="flex items-center gap-2 cursor-pointer">
+                      <input type="radio" checked={formTimeMode === mode} onChange={() => setFormTimeMode(mode)}
+                        className="text-indigo-600 focus:ring-indigo-500" />
+                      <span className="text-sm text-slate-600">{mode === 'allday' ? 'All Day' : 'Specific Time'}</span>
+                    </label>
                   ))}
                 </div>
                 {formTimeMode === 'custom' && (
                   <div className="grid grid-cols-2 gap-3">
                     <div>
-                      <label className="block text-xs font-medium text-slate-600 mb-1">Start</label>
+                      <label className="block text-[11px] text-slate-500 mb-1">Start</label>
                       <select value={formTime} onChange={e => setFormTime(e.target.value)}
-                        className="w-full px-3 py-2.5 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                        className="w-full px-3 py-2 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
                         {TIME_SLOTS.map(t => <option key={t} value={t}>{formatTime(t)}</option>)}
                       </select>
                     </div>
                     <div>
-                      <label className="block text-xs font-medium text-slate-600 mb-1">End</label>
+                      <label className="block text-[11px] text-slate-500 mb-1">End</label>
                       <select value={formEndTime} onChange={e => setFormEndTime(e.target.value)}
-                        className="w-full px-3 py-2.5 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
-                        {TIME_SLOTS.map(t => <option key={t} value={t}>{formatTime(t)}</option>)}
+                        className="w-full px-3 py-2 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                        {TIME_SLOTS.filter(t => t > formTime).map(t => <option key={t} value={t}>{formatTime(t)}</option>)}
                       </select>
                     </div>
                   </div>
                 )}
               </div>
+
+              {/* Room Booking (optional) */}
+              <div className="border border-gray-100 rounded-xl p-3 bg-slate-50">
+                <label className="block text-xs font-semibold text-slate-600 mb-2">Room Booking <span className="font-normal text-slate-400">(optional)</span></label>
+                <div className="grid grid-cols-2 gap-2">
+                  <button type="button" onClick={() => setFormRoomId('')}
+                    className={`py-2 px-3 rounded-lg text-xs font-medium border transition ${!formRoomId ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-slate-600 border-gray-200 hover:border-indigo-300'}`}>
+                    No Room Needed
+                  </button>
+                  {ROOMS.map(room => (
+                    <button key={room.id} type="button" onClick={() => { setFormRoomId(room.id); if (formTimeMode === 'allday') setFormTimeMode('custom') }}
+                      className={`py-2 px-3 rounded-lg text-xs font-medium border transition flex items-center gap-1.5 ${formRoomId === room.id ? 'text-white border-transparent' : 'bg-white text-slate-600 border-gray-200 hover:border-indigo-300'}`}
+                      style={formRoomId === room.id ? { backgroundColor: room.color, borderColor: room.color } : {}}>
+                      <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: formRoomId === room.id ? 'white' : room.color }} />
+                      {room.name.replace(' Meeting Room', '').replace(' Room', '')}
+                      <span className="text-[10px] opacity-70 ml-auto">{room.capacity}pax</span>
+                    </button>
+                  ))}
+                </div>
+                {formRoomId && (
+                  <p className="text-[11px] text-indigo-600 mt-2">
+                    {ROOMS.find(r => r.id === formRoomId)?.name} · {formTimeMode === 'custom' ? `${formatTime(formTime)} – ${formatTime(formEndTime)}` : 'Set a specific time above'}
+                  </p>
+                )}
+              </div>
+
+              {/* Participants */}
               <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">Description <span className="text-slate-400 font-normal">(optional)</span></label>
-                <textarea value={formDesc} onChange={e => setFormDesc(e.target.value)} rows={2}
+                <label className="block text-xs font-semibold text-slate-600 mb-2">
+                  Participants <span className="font-normal text-slate-400">(blocks their schedule)</span>
+                </label>
+                <div className="max-h-36 overflow-y-auto space-y-1 border border-gray-200 rounded-xl p-2">
+                  {allProfiles.filter(p => p.id !== profile?.id).map(p => {
+                    const checked = formParticipantIds.includes(p.id)
+                    return (
+                      <label key={p.id} className={`flex items-center gap-2.5 px-2 py-1.5 rounded-lg cursor-pointer transition ${checked ? 'bg-indigo-50' : 'hover:bg-slate-50'}`}>
+                        <input type="checkbox" checked={checked}
+                          onChange={e => {
+                            if (e.target.checked) { setFormParticipantIds(ids => [...ids, p.id]); if (formTimeMode === 'allday') setFormTimeMode('custom') }
+                            else setFormParticipantIds(ids => ids.filter(id => id !== p.id))
+                          }}
+                          className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500" />
+                        <div className="w-6 h-6 rounded-full bg-indigo-100 flex items-center justify-center flex-shrink-0">
+                          <span className="text-[10px] font-bold text-indigo-600">{p.name.charAt(0)}</span>
+                        </div>
+                        <div className="min-w-0">
+                          <p className="text-xs font-medium text-slate-800 truncate">{p.name}</p>
+                          <p className="text-[10px] text-slate-400">{p.department}</p>
+                        </div>
+                      </label>
+                    )
+                  })}
+                </div>
+                {formParticipantIds.length > 0 && (
+                  <p className="text-[11px] text-indigo-600 mt-1">{formParticipantIds.length} participant{formParticipantIds.length > 1 ? 's' : ''} selected — their schedule will be blocked</p>
+                )}
+              </div>
+
+              {/* Description */}
+              <div>
+                <label className="block text-xs font-semibold text-slate-600 mb-1">Description <span className="font-normal text-slate-400">(optional)</span></label>
+                <textarea value={formDesc} onChange={e => setFormDesc(e.target.value)} rows={2} placeholder="Agenda, notes..."
                   className="w-full px-3 py-2.5 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 resize-none" />
               </div>
-              {/* Visibility: only HR/Mgmt can set; staff events default to All */}
-              {isHrOrMgmt ? (
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">Visible To</label>
-                  <div className="flex gap-2 mb-2">
-                    {(['all', 'department', 'individual'] as const).map(v => (
-                      <button key={v} type="button" onClick={() => { setFormVisibility(v); setFormDept(''); setFormUserIds([]) }}
-                        className={`flex-1 py-2 rounded-xl text-xs font-semibold border transition ${formVisibility === v ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-slate-600 border-gray-200 hover:border-indigo-300'}`}>
-                        {v === 'all' ? 'All Staff' : v === 'department' ? 'Department' : 'Individual'}
-                      </button>
+
+              {/* Visibility */}
+              <div>
+                <label className="block text-xs font-semibold text-slate-600 mb-2">Visibility</label>
+                <div className="flex gap-2">
+                  {(['all', 'department', 'individual'] as const).map(v => (
+                    <button key={v} type="button" onClick={() => setFormVisibility(v)}
+                      className={`flex-1 py-2 rounded-xl text-xs font-medium border transition capitalize ${formVisibility === v ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-slate-600 border-gray-200 hover:border-indigo-300'}`}>
+                      {v === 'all' ? 'All Staff' : v}
+                    </button>
+                  ))}
+                </div>
+                {formVisibility === 'department' && (
+                  <select value={formDept} onChange={e => setFormDept(e.target.value)} required
+                    className="mt-2 w-full px-3 py-2 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                    <option value="">Select department</option>
+                    {['Management', 'HR', 'Sales', 'Operations', 'Marketing'].map(d => <option key={d}>{d}</option>)}
+                  </select>
+                )}
+                {formVisibility === 'individual' && (
+                  <div className="mt-2 max-h-28 overflow-y-auto space-y-1 border border-gray-200 rounded-xl p-2">
+                    {allProfiles.map(p => (
+                      <label key={p.id} className={`flex items-center gap-2 px-2 py-1 rounded-lg cursor-pointer ${formUserIds.includes(p.id) ? 'bg-indigo-50' : 'hover:bg-slate-50'}`}>
+                        <input type="checkbox" checked={formUserIds.includes(p.id)}
+                          onChange={e => {
+                            if (e.target.checked) setFormUserIds(ids => [...ids, p.id])
+                            else setFormUserIds(ids => ids.filter(id => id !== p.id))
+                          }}
+                          className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500" />
+                        <span className="text-xs text-slate-700">{p.name} <span className="text-slate-400">({p.department})</span></span>
+                      </label>
                     ))}
                   </div>
-                  {formVisibility === 'department' && (
-                    <select value={formDept} onChange={e => setFormDept(e.target.value)} required
-                      className="w-full px-3 py-2.5 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
-                      <option value="">Choose department...</option>
-                      {['Management', 'HR', 'Sales', 'Operations', 'Marketing'].map(d => <option key={d} value={d}>{d}</option>)}
-                    </select>
-                  )}
-                  {formVisibility === 'individual' && (
-                    <div className="border border-gray-200 rounded-xl max-h-40 overflow-y-auto divide-y divide-gray-50">
-                      {allProfiles.map(p => (
-                        <label key={p.id} className="flex items-center gap-3 px-3 py-2 hover:bg-slate-50 cursor-pointer">
-                          <input type="checkbox" checked={formUserIds.includes(p.id)}
-                            onChange={() => setFormUserIds(prev => prev.includes(p.id) ? prev.filter(x => x !== p.id) : [...prev, p.id])}
-                            className="rounded accent-indigo-600" />
-                          <div>
-                            <p className="text-sm font-medium text-slate-800">{p.name}</p>
-                            <p className="text-xs text-slate-400">{p.department}</p>
-                          </div>
-                        </label>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              ) : (
-                <div className="px-3 py-2 bg-slate-50 rounded-xl text-xs text-slate-500">
-                  Visible to: <span className="font-semibold text-slate-700">All Staff</span>
-                </div>
-              )}
+                )}
+              </div>
+
+              {/* Color */}
               <div>
-                <label className="block text-sm font-medium text-slate-700 mb-2">Color</label>
+                <label className="block text-xs font-semibold text-slate-600 mb-2">Event Color</label>
                 <div className="flex gap-2">
                   {EVENT_COLORS.map(c => (
                     <button key={c.value} type="button" onClick={() => setFormColor(c.value)}
-                      className={`w-8 h-8 rounded-full transition ${formColor === c.value ? 'ring-2 ring-offset-2 ring-slate-400 scale-110' : 'hover:scale-110'}`}
-                      style={{ backgroundColor: c.value }} />
+                      className={`w-7 h-7 rounded-full border-2 transition ${formColor === c.value ? 'border-slate-700 scale-110' : 'border-transparent'}`}
+                      style={{ backgroundColor: c.value }} title={c.label} />
                   ))}
                 </div>
               </div>
-              {formError && <p className="text-sm text-red-600 bg-red-50 px-3 py-2 rounded-xl">{formError}</p>}
-              <button type="submit" disabled={saving || (formVisibility === 'individual' && formUserIds.length === 0)}
-                className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2.5 rounded-xl transition disabled:opacity-50">
-                {saving ? 'Saving...' : editingEvent ? 'Update Event' : 'Add Event'}
-              </button>
-            </form>
-          </div>
-        </div>
-      )}
 
-      {/* ── Booking Form Modal ────────────────────────────────────────── */}
-      {activeForm === 'booking' && (
-        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 px-4">
-          <div className="bg-white rounded-2xl p-6 w-full max-w-md max-h-[90vh] overflow-y-auto shadow-2xl">
-            <div className="flex items-center justify-between mb-5">
-              <h2 className="text-lg font-bold text-slate-900">Book a Room</h2>
-              <button onClick={closeForm} className="text-slate-400 hover:text-slate-600">
-                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
-              </button>
-            </div>
-            <form onSubmit={handleSubmitBooking} className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">Date</label>
-                <input type="date" value={bkDate} onChange={e => setBkDate(e.target.value)} required
-                  className="w-full px-3 py-2.5 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+              {formError && <p className="text-sm text-red-600 bg-red-50 px-3 py-2 rounded-xl">{formError}</p>}
+
+              <div className="flex gap-3 pt-1">
+                <button type="button" onClick={closeForm} className="flex-1 py-2.5 border border-gray-200 text-slate-600 text-sm font-medium rounded-xl hover:bg-slate-50 transition">
+                  Cancel
+                </button>
+                <button type="submit" disabled={saving}
+                  className="flex-1 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-bold rounded-xl transition disabled:opacity-50">
+                  {saving ? 'Saving...' : editingEvent ? 'Save Changes' : 'Create Event'}
+                </button>
               </div>
-              <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">Room</label>
-                <div className="space-y-2">
-                  {ROOMS.map(r => (
-                    <label key={r.id} className={`flex items-center gap-3 p-3 rounded-xl border-2 cursor-pointer transition ${bkRoom === r.id ? 'border-indigo-500 bg-indigo-50' : 'border-gray-200 hover:border-gray-300'}`}>
-                      <input type="radio" name="room" value={r.id} checked={bkRoom === r.id}
-                        onChange={() => setBkRoom(r.id)} className="accent-indigo-600" />
-                      <div className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: r.color }} />
-                      <div>
-                        <p className="text-sm font-semibold text-slate-800">{r.name}</p>
-                        <p className="text-xs text-slate-400">Capacity: {r.capacity} pax</p>
-                      </div>
-                    </label>
-                  ))}
-                </div>
-              </div>
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">Start Time</label>
-                  <select value={bkStart} onChange={e => setBkStart(e.target.value)}
-                    className="w-full px-3 py-2.5 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
-                    {TIME_SLOTS.map(t => <option key={t} value={t}>{formatTime(t)}</option>)}
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">End Time</label>
-                  <select value={bkEnd} onChange={e => setBkEnd(e.target.value)}
-                    className="w-full px-3 py-2.5 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
-                    {TIME_SLOTS.map(t => <option key={t} value={t}>{formatTime(t)}</option>)}
-                  </select>
-                </div>
-              </div>
-              {bkConflicts.length > 0 && (
-                <div className="bg-amber-50 border border-amber-200 rounded-xl p-3">
-                  <p className="text-xs font-semibold text-amber-700 mb-1">Conflicts with existing booking:</p>
-                  {bkConflicts.map(c => (
-                    <p key={c.id} className="text-xs text-amber-600">{c.start_time.slice(0, 5)}–{c.end_time.slice(0, 5)} · {c.user_name} — {c.purpose}</p>
-                  ))}
-                </div>
-              )}
-              <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">Purpose</label>
-                <input type="text" value={bkPurpose} onChange={e => setBkPurpose(e.target.value)} required
-                  placeholder="e.g. Team meeting, Client call"
-                  className="w-full px-3 py-2.5 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">
-                  Attendees <span className="text-slate-400 font-normal">(optional)</span>
-                </label>
-                <div className="border border-gray-200 rounded-xl max-h-40 overflow-y-auto divide-y divide-gray-50">
-                  {allProfiles.filter(p => p.id !== profile?.id).map(p => (
-                    <label key={p.id} className="flex items-center gap-3 px-3 py-2 hover:bg-slate-50 cursor-pointer">
-                      <input type="checkbox"
-                        checked={bkAttendeeIds.includes(p.id)}
-                        onChange={() => setBkAttendeeIds(prev => prev.includes(p.id) ? prev.filter(x => x !== p.id) : [...prev, p.id])}
-                        className="rounded accent-indigo-600" />
-                      <div>
-                        <p className="text-sm font-medium text-slate-800">{p.name}</p>
-                        <p className="text-xs text-slate-400">{p.department}</p>
-                      </div>
-                    </label>
-                  ))}
-                  {allProfiles.length === 0 && <p className="px-3 py-3 text-xs text-slate-400">Loading staff list...</p>}
-                </div>
-                {bkAttendeeIds.length > 0 && (
-                  <p className="text-xs text-indigo-600 mt-1">{bkAttendeeIds.length} attendee(s) selected</p>
-                )}
-              </div>
-              {bkError && <p className="text-sm text-red-600 bg-red-50 px-3 py-2 rounded-xl">{bkError}</p>}
-              <button type="submit" disabled={bkSaving}
-                className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2.5 rounded-xl transition disabled:opacity-50">
-                {bkSaving ? 'Booking...' : 'Confirm Booking'}
-              </button>
             </form>
           </div>
         </div>
