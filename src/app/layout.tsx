@@ -1,6 +1,5 @@
 import type { Metadata } from 'next'
 import './globals.css'
-import { ProfileProvider } from '@/lib/ProfileContext'
 import AppGuard from '@/components/AppGuard'
 
 export const metadata: Metadata = {
@@ -28,9 +27,7 @@ export default function RootLayout({
       </head>
       <body className="antialiased">
         <AppGuard />
-        <ProfileProvider>
-          {children}
-        </ProfileProvider>
+        {children}
       </body>
     </html>
   )
