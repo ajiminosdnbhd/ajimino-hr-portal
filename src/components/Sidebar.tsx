@@ -157,7 +157,7 @@ export default function Sidebar({ profile }: { profile: Profile | null }) {
             </div>
             <div className="flex-1 min-w-0">
               <p className="text-sm font-semibold truncate leading-tight text-white">{profile.name}</p>
-              <p className="text-[10px] font-medium capitalize" style={{ color: 'rgba(255,255,255,0.4)' }}>{profile.role}</p>
+              <p className="text-[10px] font-medium capitalize" style={{ color: 'rgba(255,255,255,0.4)' }}>{profile.department}</p>
             </div>
           </div>
         )}
@@ -213,7 +213,7 @@ export default function Sidebar({ profile }: { profile: Profile | null }) {
                   </div>
                   <div className="min-w-0">
                     <p className="text-xs font-semibold truncate text-white">{profile.name}</p>
-                    <p className="text-[10px] capitalize" style={{ color: 'rgba(255,255,255,0.4)' }}>{profile.role}</p>
+                    <p className="text-[10px] capitalize" style={{ color: 'rgba(255,255,255,0.4)' }}>{profile.department}</p>
                   </div>
                 </div>
               )}
