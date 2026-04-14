@@ -70,6 +70,7 @@ export default function PlannerPage() {
   const [bkStart, setBkStart] = useState('09:00')
   const [bkEnd, setBkEnd] = useState('10:00')
   const [bkPurpose, setBkPurpose] = useState('')
+  const [bkAttendeeIds, setBkAttendeeIds] = useState<string[]>([])
   const [bkError, setBkError] = useState('')
   const [bkSaving, setBkSaving] = useState(false)
 
@@ -78,10 +79,9 @@ export default function PlannerPage() {
   useEffect(() => {
     if (profile) {
       loadMonthData()
-      if (isHrOrMgmt) {
-        supabase.from('profiles').select('id, name, department').order('name')
-          .then(({ data }) => { if (data) setAllProfiles(data) })
-      }
+      // Load all profiles for attendee selection (needed for everyone, not just HR)
+      supabase.from('profiles').select('id, name, department').order('name')
+        .then(({ data }) => { if (data) setAllProfiles(data) })
     }
   }, [profile, month, year])
 
@@ -163,7 +163,7 @@ export default function PlannerPage() {
     setFormTitle(''); setFormDate(''); setFormTime('09:00'); setFormEndTime('10:00'); setFormDesc('')
     setFormColor('#4f46e5'); setFormVisibility('all'); setFormDept(''); setFormUserIds([])
     setFormTimeMode('allday'); setFormError('')
-    setBkError(''); setBkPurpose(''); setBkRoom(ROOMS[0].id); setBkStart('09:00'); setBkEnd('10:00')
+    setBkError(''); setBkPurpose(''); setBkAttendeeIds([]); setBkRoom(ROOMS[0].id); setBkStart('09:00'); setBkEnd('10:00')
   }
 
   async function handleSubmitEvent(e: React.FormEvent) {
@@ -195,7 +195,7 @@ export default function PlannerPage() {
   function openBookingForm(date?: string) {
     setBkDate(date || new Date().toISOString().split('T')[0])
     setBkRoom(ROOMS[0].id); setBkStart('09:00'); setBkEnd('10:00')
-    setBkPurpose(''); setBkError(''); setActiveForm('booking')
+    setBkPurpose(''); setBkAttendeeIds([]); setBkError(''); setActiveForm('booking')
   }
 
   async function handleSubmitBooking(e: React.FormEvent) {
@@ -203,9 +203,12 @@ export default function PlannerPage() {
     if (!profile) return
     if (bkStart >= bkEnd) { setBkError('End time must be after start time'); setBkSaving(false); return }
     if (getBookingConflicts().length > 0) { setBkError('Time slot conflicts with an existing booking'); setBkSaving(false); return }
+    const attendees = allProfiles.filter(p => bkAttendeeIds.includes(p.id))
     const { error } = await supabase.from('bookings').insert({
       user_id: profile.id, user_name: profile.name, department: profile.department,
       room_id: bkRoom, date: bkDate, start_time: bkStart, end_time: bkEnd, purpose: bkPurpose,
+      attendee_ids: bkAttendeeIds.length > 0 ? bkAttendeeIds : null,
+      attendee_names: attendees.length > 0 ? attendees.map(p => p.name) : null,
     })
     if (error) { setBkError(error.message); setBkSaving(false); return }
     closeForm(); loadMonthData(); setBkSaving(false)
@@ -375,10 +378,10 @@ export default function PlannerPage() {
                     <div className="mt-0.5">
                       {dayBookings.slice(0, 1).map(b => (
                         <div key={b.id} className="text-[9px] font-medium truncate rounded px-1 py-0.5 bg-blue-100 text-blue-700 leading-tight">
-                          {isHrOrMgmt ? `${b.user_name.split(' ')[0]}: ${ROOMS.find(r => r.id === b.room_id)?.name.split(' ')[0] || b.room_id}` : ROOMS.find(r => r.id === b.room_id)?.name.split(' ')[0] || b.room_id}
+                          {b.department}: {ROOMS.find(r => r.id === b.room_id)?.name.split(' ')[0] || b.room_id}
                         </div>
                       ))}
-                      {dayBookings.length > 1 && <div className="text-[9px] text-slate-400 px-1">+{dayBookings.length - 1}</div>}
+                      {dayBookings.length > 1 && <div className="text-[9px] text-slate-400 px-1">+{dayBookings.length - 1} more</div>}
                     </div>
                   )}
                 </div>
@@ -498,11 +501,20 @@ export default function PlannerPage() {
                               </button>
                             )}
                           </div>
-                          {isHrOrMgmt && <p className="text-[10px] text-slate-500 mt-0.5">{b.user_name} · {b.department}</p>}
+                          <p className="text-[10px] text-slate-500 mt-0.5">{b.user_name} · {b.department}</p>
                           <p className="text-[10px] text-blue-600 font-medium mt-0.5">
                             {b.start_time.slice(0, 5)} – {b.end_time.slice(0, 5)}
                           </p>
-                          {b.purpose && <p className="text-[10px] text-slate-400 mt-0.5 truncate">{b.purpose}</p>}
+                          {b.purpose && <p className="text-[10px] text-slate-600 mt-0.5">{b.purpose}</p>}
+                          {b.attendee_names && b.attendee_names.length > 0 && (
+                            <div className="mt-1.5 flex flex-wrap gap-1">
+                              {b.attendee_names.map((name, i) => (
+                                <span key={i} className="text-[9px] font-medium bg-blue-200 text-blue-800 px-1.5 py-0.5 rounded-full">
+                                  {name.split(' ')[0]}
+                                </span>
+                              ))}
+                            </div>
+                          )}
                         </div>
                       )
                     })}
@@ -748,6 +760,29 @@ export default function PlannerPage() {
                 <input type="text" value={bkPurpose} onChange={e => setBkPurpose(e.target.value)} required
                   placeholder="e.g. Team meeting, Client call"
                   className="w-full px-3 py-2.5 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">
+                  Attendees <span className="text-slate-400 font-normal">(optional)</span>
+                </label>
+                <div className="border border-gray-200 rounded-xl max-h-40 overflow-y-auto divide-y divide-gray-50">
+                  {allProfiles.filter(p => p.id !== profile?.id).map(p => (
+                    <label key={p.id} className="flex items-center gap-3 px-3 py-2 hover:bg-slate-50 cursor-pointer">
+                      <input type="checkbox"
+                        checked={bkAttendeeIds.includes(p.id)}
+                        onChange={() => setBkAttendeeIds(prev => prev.includes(p.id) ? prev.filter(x => x !== p.id) : [...prev, p.id])}
+                        className="rounded accent-indigo-600" />
+                      <div>
+                        <p className="text-sm font-medium text-slate-800">{p.name}</p>
+                        <p className="text-xs text-slate-400">{p.department}</p>
+                      </div>
+                    </label>
+                  ))}
+                  {allProfiles.length === 0 && <p className="px-3 py-3 text-xs text-slate-400">Loading staff list...</p>}
+                </div>
+                {bkAttendeeIds.length > 0 && (
+                  <p className="text-xs text-indigo-600 mt-1">{bkAttendeeIds.length} attendee(s) selected</p>
+                )}
               </div>
               {bkError && <p className="text-sm text-red-600 bg-red-50 px-3 py-2 rounded-xl">{bkError}</p>}
               <button type="submit" disabled={bkSaving}

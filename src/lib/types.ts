@@ -21,6 +21,8 @@ export interface Booking {
   start_time: string
   end_time: string
   purpose: string
+  attendee_ids: string[] | null
+  attendee_names: string[] | null
   created_at: string
 }
 
