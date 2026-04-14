@@ -245,8 +245,32 @@ export default function PlannerPage() {
     e.preventDefault(); setBkError(''); setBkSaving(true)
     if (!profile) { setBkSaving(false); return }
     if (bkStart >= bkEnd) { setBkError('End time must be after start time'); setBkSaving(false); return }
-    if (getBookingConflicts().length > 0) { setBkError('This time slot is already booked for that room'); setBkSaving(false); return }
     try {
+      // Live server-side check — catches duplicates even if local state is stale
+      const { data: existing } = await adminRead<Booking>('bookings', {
+        filters: [
+          { type: 'eq', col: 'date', val: bkDate },
+          { type: 'eq', col: 'room_id', val: bkRoom },
+        ],
+      })
+
+      // Same person, same room, same exact time = duplicate
+      const isDuplicate = existing.some(
+        b => b.user_id === profile.id && b.start_time === bkStart && b.end_time === bkEnd
+      )
+      if (isDuplicate) {
+        setBkError('You already have this exact booking.')
+        setBkSaving(false); return
+      }
+
+      // Any overlap on this room = conflict (regardless of who booked)
+      const hasConflict = existing.some(b => b.start_time < bkEnd && b.end_time > bkStart)
+      if (hasConflict) {
+        const clash = existing.find(b => b.start_time < bkEnd && b.end_time > bkStart)!
+        setBkError(`${ROOMS.find(r => r.id === bkRoom)?.name || 'Room'} is already booked ${clash.start_time.slice(0,5)}–${clash.end_time.slice(0,5)} by ${clash.user_name}.`)
+        setBkSaving(false); return
+      }
+
       const attendees = allProfiles.filter(p => bkAttendeeIds.includes(p.id))
       const { error } = await supabase.from('bookings').insert({
         user_id: profile.id, user_name: profile.name, department: profile.department,
