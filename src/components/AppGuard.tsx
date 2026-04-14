@@ -2,48 +2,67 @@
 
 import { useEffect } from 'react'
 
+// Build ID stamped into this bundle at deploy time.
+const BUILD_ID = process.env.NEXT_PUBLIC_BUILD_ID ?? 'dev'
+
 /**
- * AppGuard — mounts once in the root layout.
+ * AppGuard — mounts once in the root layout, renders nothing.
  *
- * Fixes the "old version / can't click anything" bug caused by the browser
- * restoring a frozen page snapshot from the back/forward cache (bfcache).
+ * Permanently prevents three classes of "old version / can't click" bugs:
  *
- * When the browser puts a page into bfcache (e.g. tab switching, closing and
- * reopening the browser), all JavaScript state is frozen — including any
- * in-flight auth loading state.  On restore the page looks stuck and buttons
- * don't respond.  The only reliable fix is to detect the bfcache restore and
- * do a hard reload so the app starts fresh.
+ * 1. bfcache restore — browser restores a frozen snapshot of the page
+ *    (e.g. switching tabs, closing + reopening browser).  The snapshot
+ *    includes stale auth state (loading=true) which makes the UI unclickable.
+ *    Fix: reload immediately when pageshow fires with persisted=true.
  *
- * Also handles ChunkLoadError: when a new deployment is pushed, old cached JS
- * chunk URLs return 404.  Detect this and reload to pick up the new chunks.
+ * 2. New deployment while tab is open — JS chunks referenced by the old
+ *    HTML no longer exist on the CDN → 404 → hydration fails.
+ *    Fix: on every tab focus, call /api/version; if the live buildId
+ *    differs from the one stamped into this bundle, hard-reload.
+ *
+ * 3. ChunkLoadError / script 404 — same deployment mismatch caught via
+ *    error events and unhandled promise rejections.
+ *    Fix: reload immediately.
  */
 export default function AppGuard() {
   useEffect(() => {
-    // ── bfcache restore detection ─────────────────────────────────────────
-    // `pageshow` fires both on normal load (persisted=false) and on bfcache
-    // restore (persisted=true).  On restore, force a full reload.
+    // ── 1. bfcache restore ────────────────────────────────────────────────
     const handlePageShow = (e: PageTransitionEvent) => {
-      if (e.persisted) {
-        window.location.reload()
-      }
+      if (e.persisted) window.location.reload()
     }
     window.addEventListener('pageshow', handlePageShow)
 
-    // ── Stale chunk detection ────────────────────────────────────────────
-    // If a script tag fails to load (404 after a new Vercel deploy), the
-    // browser fires an error event on the script element.  Reload to pick up
-    // the latest bundle.
-    const handleError = (e: ErrorEvent) => {
-      const target = e.target as HTMLElement | null
-      if (target && (target as HTMLScriptElement).src?.includes('/_next/static/')) {
-        window.location.reload()
-      }
+    // ── 2. Deployment version check on tab focus ──────────────────────────
+    let checking = false
+    const checkVersion = async () => {
+      if (checking || BUILD_ID === 'dev') return
+      checking = true
+      try {
+        const res = await fetch('/api/version', { cache: 'no-store' })
+        if (res.ok) {
+          const { buildId } = await res.json()
+          if (buildId && buildId !== BUILD_ID) {
+            window.location.reload()
+          }
+        }
+      } catch { /* network error — skip */ }
+      finally { checking = false }
     }
-    window.addEventListener('error', handleError, true) // capture phase
 
-    // ── Unhandled promise rejections (ChunkLoadError) ────────────────────
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') checkVersion()
+    }
+    document.addEventListener('visibilitychange', handleVisibilityChange)
+
+    // ── 3. Stale chunk / script 404 ───────────────────────────────────────
+    const handleScriptError = (e: ErrorEvent) => {
+      const src = (e.target as HTMLScriptElement | null)?.src ?? ''
+      if (src.includes('/_next/static/')) window.location.reload()
+    }
+    window.addEventListener('error', handleScriptError, true)
+
     const handleUnhandledRejection = (e: PromiseRejectionEvent) => {
-      const msg = e.reason?.message || e.reason?.toString() || ''
+      const msg: string = e.reason?.message ?? e.reason?.toString() ?? ''
       if (msg.includes('ChunkLoadError') || msg.includes('Loading chunk')) {
         window.location.reload()
       }
@@ -52,7 +71,8 @@ export default function AppGuard() {
 
     return () => {
       window.removeEventListener('pageshow', handlePageShow)
-      window.removeEventListener('error', handleError, true)
+      document.removeEventListener('visibilitychange', handleVisibilityChange)
+      window.removeEventListener('error', handleScriptError, true)
       window.removeEventListener('unhandledrejection', handleUnhandledRejection)
     }
   }, [])

@@ -1,5 +1,11 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  // Unique ID stamped into every build — changes on every deployment.
+  // AppGuard compares this against /api/version on tab focus to detect
+  // new deployments and force a reload automatically.
+  env: {
+    NEXT_PUBLIC_BUILD_ID: process.env.VERCEL_GIT_COMMIT_SHA || Date.now().toString(),
+  },
   // Suppress non-critical ESLint warnings during build
   eslint: {
     ignoreDuringBuilds: false,
