@@ -88,6 +88,7 @@ export default function PoliciesPage() {
   }
 
   async function handleDelete(id: string) {
+    if (!confirm('Delete this policy? This cannot be undone.')) return
     await supabase.from('policies').delete().eq('id', id)
     loadPolicies()
   }

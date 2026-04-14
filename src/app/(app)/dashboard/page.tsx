@@ -69,21 +69,21 @@ export default function DashboardPage() {
 
   async function loadRecentAnnouncements() {
     if (!profile) return
+    // Fetch enough so client-side filtering still yields results for staff
     const { data } = await adminRead<Announcement>('announcements', {
       order: { col: 'created_at', asc: false },
-      limit: 4,
+      limit: 50,
     })
     if (isHrOrMgmt) {
-      setRecentAnnouncements(data)
+      setRecentAnnouncements(data.slice(0, 4))
     } else {
-      setRecentAnnouncements(
-        data.filter(a => {
-          if (a.visibility === 'all') return true
-          if (a.visibility === 'department' && a.target_departments.includes(profile.department)) return true
-          if (a.visibility === 'individual' && a.target_user_ids.includes(profile.id)) return true
-          return false
-        })
-      )
+      const filtered = data.filter(a => {
+        if (a.visibility === 'all') return true
+        if (a.visibility === 'department' && a.target_departments.includes(profile.department)) return true
+        if (a.visibility === 'individual' && a.target_user_ids.includes(profile.id)) return true
+        return false
+      })
+      setRecentAnnouncements(filtered.slice(0, 4))
     }
   }
 

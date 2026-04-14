@@ -34,6 +34,7 @@ export default function AnnouncementsPage() {
   const { profile, supabase } = useProfile()
   const [announcements, setAnnouncements] = useState<Announcement[]>([])
   const [loadError, setLoadError] = useState<string | null>(null)
+  const [loading, setLoading] = useState(true)
   const [showCreate, setShowCreate] = useState(false)
   const [whatsappAnn, setWhatsappAnn] = useState<Announcement | null>(null)
   const [allProfiles, setAllProfiles] = useState<Profile[]>([])
@@ -62,9 +63,11 @@ export default function AnnouncementsPage() {
 
   async function loadAnnouncements() {
     setLoadError(null)
+    setLoading(true)
     const { data, error } = await adminRead<Announcement>('announcements', {
       order: { col: 'created_at', asc: false },
     })
+    setLoading(false)
     if (error) { setLoadError(error); return }
 
     if (!profile) return
@@ -72,7 +75,6 @@ export default function AnnouncementsPage() {
     if (isHrOrMgmt) {
       setAnnouncements(data)
     } else {
-      // Staff: filter to only announcements targeted to them
       const filtered = data.filter(a => {
         if (a.visibility === 'all') return true
         if (a.visibility === 'department' && a.target_departments.includes(profile.department)) return true
@@ -448,7 +450,17 @@ export default function AnnouncementsPage() {
       )}
 
       {/* Announcements List */}
-      {announcements.length === 0 ? (
+      {loading ? (
+        <div className="space-y-4">
+          {[1, 2, 3].map(i => (
+            <div key={i} className="bg-white border border-gray-100 rounded-2xl p-5 animate-pulse">
+              <div className="h-4 bg-slate-100 rounded-lg w-2/3 mb-3" />
+              <div className="h-3 bg-slate-100 rounded-lg w-1/3 mb-2" />
+              <div className="h-3 bg-slate-100 rounded-lg w-full" />
+            </div>
+          ))}
+        </div>
+      ) : announcements.length === 0 ? (
         <div className="bg-white border border-gray-100 rounded-2xl p-12 text-center">
           <div className="w-12 h-12 bg-indigo-50 rounded-2xl flex items-center justify-center mx-auto mb-3">
             <svg className="w-6 h-6 text-indigo-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>

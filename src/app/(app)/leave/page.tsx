@@ -464,11 +464,11 @@ export default function LeavePage() {
             <thead>
               <tr className="border-b border-gray-100">
                 <th className="text-left text-xs font-medium text-slate-400 px-5 py-3">Name</th>
-                <th className="text-left text-xs font-medium text-slate-400 px-5 py-3">Department</th>
-                <th className="text-left text-xs font-medium text-slate-400 px-5 py-3">AL Remaining</th>
-                <th className="text-left text-xs font-medium text-slate-400 px-5 py-3">AL Used / Entitled</th>
-                <th className="text-left text-xs font-medium text-slate-400 px-5 py-3">ML Remaining</th>
-                <th className="text-left text-xs font-medium text-slate-400 px-5 py-3">ML Used / Entitled</th>
+                <th className="text-left text-xs font-medium text-slate-400 px-5 py-3 hidden sm:table-cell">Department</th>
+                <th className="text-left text-xs font-medium text-slate-400 px-5 py-3">AL Left</th>
+                <th className="text-left text-xs font-medium text-slate-400 px-5 py-3 hidden md:table-cell">AL Used/Total</th>
+                <th className="text-left text-xs font-medium text-slate-400 px-5 py-3">ML Left</th>
+                <th className="text-left text-xs font-medium text-slate-400 px-5 py-3 hidden md:table-cell">ML Used/Total</th>
               </tr>
             </thead>
             <tbody>
@@ -476,12 +476,15 @@ export default function LeavePage() {
                 const alR = p.al_entitled - p.al_used, mlR = p.ml_entitled - p.ml_used
                 return (
                   <tr key={p.id} className="border-b border-gray-50 hover:bg-slate-50">
-                    <td className="px-5 py-3 text-sm font-medium text-slate-900">{p.name}</td>
-                    <td className="px-5 py-3 text-sm text-slate-600">{p.department}</td>
-                    <td className="px-5 py-3"><span className={`text-sm font-semibold ${alR <= 3 ? 'text-red-500' : 'text-emerald-600'}`}>{alR} days</span></td>
-                    <td className="px-5 py-3 text-sm text-slate-500">{p.al_used} / {p.al_entitled}</td>
-                    <td className="px-5 py-3"><span className={`text-sm font-semibold ${mlR <= 2 ? 'text-red-500' : 'text-emerald-600'}`}>{mlR} days</span></td>
-                    <td className="px-5 py-3 text-sm text-slate-500">{p.ml_used} / {p.ml_entitled}</td>
+                    <td className="px-5 py-3">
+                      <p className="text-sm font-medium text-slate-900">{p.name}</p>
+                      <p className="text-xs text-slate-400 sm:hidden">{p.department}</p>
+                    </td>
+                    <td className="px-5 py-3 text-sm text-slate-600 hidden sm:table-cell">{p.department}</td>
+                    <td className="px-5 py-3"><span className={`text-sm font-semibold ${alR <= 3 ? 'text-red-500' : 'text-emerald-600'}`}>{alR}d</span></td>
+                    <td className="px-5 py-3 text-sm text-slate-500 hidden md:table-cell">{p.al_used} / {p.al_entitled}</td>
+                    <td className="px-5 py-3"><span className={`text-sm font-semibold ${mlR <= 2 ? 'text-red-500' : 'text-emerald-600'}`}>{mlR}d</span></td>
+                    <td className="px-5 py-3 text-sm text-slate-500 hidden md:table-cell">{p.ml_used} / {p.ml_entitled}</td>
                   </tr>
                 )
               })}
@@ -491,99 +494,164 @@ export default function LeavePage() {
         </div>
       )}
 
-      {/* Leave list table */}
+      {/* Leave list — card layout on mobile, table on md+ */}
       {tab !== 'balances' && (
-        <div className="bg-white border border-gray-100 rounded-2xl overflow-x-auto">
-          <table className="w-full">
-            <thead>
-              <tr className="border-b border-gray-100">
-                <th className="text-left text-xs font-medium text-slate-400 px-5 py-3">Staff</th>
-                <th className="text-left text-xs font-medium text-slate-400 px-5 py-3">Type</th>
-                <th className="text-left text-xs font-medium text-slate-400 px-5 py-3">Period</th>
-                <th className="text-left text-xs font-medium text-slate-400 px-5 py-3">Days</th>
-                <th className="text-left text-xs font-medium text-slate-400 px-5 py-3">Reason</th>
-                <th className="text-left text-xs font-medium text-slate-400 px-5 py-3">Status</th>
-                <th className="text-left text-xs font-medium text-slate-400 px-5 py-3">Action</th>
-              </tr>
-            </thead>
-            <tbody>
-              {filteredLeaves.map(leave => (
-                <tr key={leave.id} className="border-b border-gray-50 hover:bg-slate-50">
-                  <td className="px-5 py-3">
-                    <p className="text-sm font-medium text-slate-900">{leave.user_name}</p>
-                    <p className="text-xs text-slate-400">{leave.department}</p>
-                  </td>
-                  <td className="px-5 py-3">
-                    <span className={`inline-flex px-2 py-0.5 rounded-lg text-xs font-medium ${leave.type === 'Annual Leave' ? 'bg-indigo-50 text-indigo-600' : 'bg-emerald-50 text-emerald-600'}`}>
-                      {leave.type === 'Annual Leave' ? 'AL' : 'ML'}
-                    </span>
-                  </td>
-                  <td className="px-5 py-3 text-sm text-slate-600">
-                    {new Date(leave.start_date + 'T00:00:00').toLocaleDateString('en-MY', { day: 'numeric', month: 'short' })}
-                    {' – '}
-                    {new Date(leave.end_date + 'T00:00:00').toLocaleDateString('en-MY', { day: 'numeric', month: 'short', year: 'numeric' })}
-                  </td>
-                  <td className="px-5 py-3 text-sm text-slate-600">{leave.days}</td>
-                  <td className="px-5 py-3">
-                    <p className="text-sm text-slate-600 max-w-[180px] truncate">{leave.reason}</p>
-                    {leave.cancellation_reason && (
-                      <p className="text-xs text-orange-500 mt-0.5 max-w-[180px] truncate">Cancel reason: {leave.cancellation_reason}</p>
+        <>
+          {/* Mobile card layout */}
+          <div className="md:hidden space-y-3">
+            {filteredLeaves.map(leave => (
+              <div key={leave.id} className="bg-white border border-gray-100 rounded-2xl p-4">
+                <div className="flex items-start justify-between gap-2 mb-2">
+                  <div>
+                    {tab === 'approvals' && (
+                      <p className="text-sm font-semibold text-slate-900">{leave.user_name}</p>
                     )}
-                    {leave.receipt_name && (
-                      <button onClick={async () => {
-                        const { data } = await supabase.storage.from('receipts').createSignedUrl(leave.receipt_path!, 60)
-                        if (data?.signedUrl) window.open(data.signedUrl, '_blank')
-                      }} className="text-xs text-indigo-600 hover:text-indigo-700 font-medium mt-0.5">
-                        View Receipt
-                      </button>
-                    )}
-                  </td>
-                  <td className="px-5 py-3">
-                    <span className={`inline-flex px-2.5 py-1 rounded-lg text-xs font-semibold ${statusBadge(leave.status)}`}>
-                      {statusLabel(leave.status)}
-                    </span>
-                    {leave.approved_by && leave.status !== 'cancellation_requested' && (
-                      <p className="text-[10px] text-slate-400 mt-0.5">by {leave.approved_by}</p>
-                    )}
-                  </td>
-                  <td className="px-5 py-3">
-                    {/* Staff: request cancellation on own pending/approved leaves */}
-                    {tab === 'my' && profile && leave.user_id === profile.id &&
-                      (leave.status === 'pending' || leave.status === 'approved') && (
-                      <button onClick={() => { setCancellingLeave(leave); setCancelReason(''); setCancelError('') }}
-                        className="px-3 py-1 bg-orange-50 text-orange-600 text-xs font-semibold rounded-lg hover:bg-orange-100 transition whitespace-nowrap">
-                        Request Cancel
-                      </button>
-                    )}
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className={`inline-flex px-2 py-0.5 rounded-lg text-xs font-medium ${leave.type === 'Annual Leave' ? 'bg-indigo-50 text-indigo-600' : 'bg-emerald-50 text-emerald-600'}`}>
+                        {leave.type === 'Annual Leave' ? 'AL' : 'ML'}
+                      </span>
+                      <span className="text-xs text-slate-500">
+                        {new Date(leave.start_date + 'T00:00:00').toLocaleDateString('en-MY', { day: 'numeric', month: 'short' })}
+                        {' – '}
+                        {new Date(leave.end_date + 'T00:00:00').toLocaleDateString('en-MY', { day: 'numeric', month: 'short', year: 'numeric' })}
+                        {' · '}{leave.days}d
+                      </span>
+                    </div>
+                  </div>
+                  <span className={`inline-flex px-2.5 py-1 rounded-lg text-xs font-semibold flex-shrink-0 ${statusBadge(leave.status)}`}>
+                    {statusLabel(leave.status)}
+                  </span>
+                </div>
+                {leave.reason && <p className="text-xs text-slate-500 mb-1 line-clamp-2">{leave.reason}</p>}
+                {leave.cancellation_reason && (
+                  <p className="text-xs text-orange-500 mb-1">Cancel: {leave.cancellation_reason}</p>
+                )}
+                {leave.receipt_name && (
+                  <button onClick={async () => {
+                    const { data } = await supabase.storage.from('receipts').createSignedUrl(leave.receipt_path!, 60)
+                    if (data?.signedUrl) window.open(data.signedUrl, '_blank')
+                  }} className="text-xs text-indigo-600 font-medium mb-2 block">View Receipt</button>
+                )}
+                <div className="flex gap-2 flex-wrap mt-2">
+                  {tab === 'my' && profile && leave.user_id === profile.id &&
+                    (leave.status === 'pending' || leave.status === 'approved') && (
+                    <button onClick={() => { setCancellingLeave(leave); setCancelReason(''); setCancelError('') }}
+                      className="px-3 py-1.5 bg-orange-50 text-orange-600 text-xs font-semibold rounded-lg hover:bg-orange-100 transition">
+                      Request Cancel
+                    </button>
+                  )}
+                  {tab === 'approvals' && leave.status === 'pending' && (
+                    <>
+                      <button onClick={() => handleApproval(leave, 'approved')}
+                        className="flex-1 py-1.5 bg-green-50 text-green-600 text-xs font-semibold rounded-lg hover:bg-green-100 transition">Approve</button>
+                      <button onClick={() => handleApproval(leave, 'rejected')}
+                        className="flex-1 py-1.5 bg-red-50 text-red-600 text-xs font-semibold rounded-lg hover:bg-red-100 transition">Reject</button>
+                    </>
+                  )}
+                  {tab === 'approvals' && leave.status === 'cancellation_requested' && (
+                    <>
+                      <button onClick={() => handleCancellationApproval(leave, 'approve')}
+                        className="flex-1 py-1.5 bg-orange-50 text-orange-600 text-xs font-semibold rounded-lg hover:bg-orange-100 transition">Approve Cancel</button>
+                      <button onClick={() => handleCancellationApproval(leave, 'reject')}
+                        className="flex-1 py-1.5 bg-slate-100 text-slate-600 text-xs font-semibold rounded-lg hover:bg-slate-200 transition">Keep Leave</button>
+                    </>
+                  )}
+                </div>
+              </div>
+            ))}
+            {filteredLeaves.length === 0 && (
+              <div className="bg-white border border-gray-100 rounded-2xl px-5 py-8 text-center text-sm text-slate-400">No leave records found</div>
+            )}
+          </div>
 
-                    {/* HR/Mgmt: approve/reject pending leave */}
-                    {tab === 'approvals' && leave.status === 'pending' && (
-                      <div className="flex gap-2">
-                        <button onClick={() => handleApproval(leave, 'approved')}
-                          className="px-3 py-1 bg-green-50 text-green-600 text-xs font-semibold rounded-lg hover:bg-green-100 transition">Approve</button>
-                        <button onClick={() => handleApproval(leave, 'rejected')}
-                          className="px-3 py-1 bg-red-50 text-red-600 text-xs font-semibold rounded-lg hover:bg-red-100 transition">Reject</button>
-                      </div>
-                    )}
-
-                    {/* HR/Mgmt: approve/reject cancellation request */}
-                    {tab === 'approvals' && leave.status === 'cancellation_requested' && (
-                      <div className="flex gap-2">
-                        <button onClick={() => handleCancellationApproval(leave, 'approve')}
-                          className="px-3 py-1 bg-orange-50 text-orange-600 text-xs font-semibold rounded-lg hover:bg-orange-100 transition whitespace-nowrap">Approve Cancel</button>
-                        <button onClick={() => handleCancellationApproval(leave, 'reject')}
-                          className="px-3 py-1 bg-slate-100 text-slate-600 text-xs font-semibold rounded-lg hover:bg-slate-200 transition whitespace-nowrap">Keep Leave</button>
-                      </div>
-                    )}
-                  </td>
+          {/* Desktop table layout */}
+          <div className="hidden md:block bg-white border border-gray-100 rounded-2xl overflow-x-auto">
+            <table className="w-full">
+              <thead>
+                <tr className="border-b border-gray-100">
+                  <th className="text-left text-xs font-medium text-slate-400 px-5 py-3">Staff</th>
+                  <th className="text-left text-xs font-medium text-slate-400 px-5 py-3">Type</th>
+                  <th className="text-left text-xs font-medium text-slate-400 px-5 py-3">Period</th>
+                  <th className="text-left text-xs font-medium text-slate-400 px-5 py-3">Days</th>
+                  <th className="text-left text-xs font-medium text-slate-400 px-5 py-3">Reason</th>
+                  <th className="text-left text-xs font-medium text-slate-400 px-5 py-3">Status</th>
+                  <th className="text-left text-xs font-medium text-slate-400 px-5 py-3">Action</th>
                 </tr>
-              ))}
-              {filteredLeaves.length === 0 && (
-                <tr><td colSpan={7} className="px-5 py-8 text-center text-sm text-slate-400">No leave records found</td></tr>
-              )}
-            </tbody>
-          </table>
-        </div>
+              </thead>
+              <tbody>
+                {filteredLeaves.map(leave => (
+                  <tr key={leave.id} className="border-b border-gray-50 hover:bg-slate-50">
+                    <td className="px-5 py-3">
+                      <p className="text-sm font-medium text-slate-900">{leave.user_name}</p>
+                      <p className="text-xs text-slate-400">{leave.department}</p>
+                    </td>
+                    <td className="px-5 py-3">
+                      <span className={`inline-flex px-2 py-0.5 rounded-lg text-xs font-medium ${leave.type === 'Annual Leave' ? 'bg-indigo-50 text-indigo-600' : 'bg-emerald-50 text-emerald-600'}`}>
+                        {leave.type === 'Annual Leave' ? 'AL' : 'ML'}
+                      </span>
+                    </td>
+                    <td className="px-5 py-3 text-sm text-slate-600">
+                      {new Date(leave.start_date + 'T00:00:00').toLocaleDateString('en-MY', { day: 'numeric', month: 'short' })}
+                      {' – '}
+                      {new Date(leave.end_date + 'T00:00:00').toLocaleDateString('en-MY', { day: 'numeric', month: 'short', year: 'numeric' })}
+                    </td>
+                    <td className="px-5 py-3 text-sm text-slate-600">{leave.days}</td>
+                    <td className="px-5 py-3">
+                      <p className="text-sm text-slate-600 max-w-[180px] truncate">{leave.reason}</p>
+                      {leave.cancellation_reason && (
+                        <p className="text-xs text-orange-500 mt-0.5 max-w-[180px] truncate">Cancel: {leave.cancellation_reason}</p>
+                      )}
+                      {leave.receipt_name && (
+                        <button onClick={async () => {
+                          const { data } = await supabase.storage.from('receipts').createSignedUrl(leave.receipt_path!, 60)
+                          if (data?.signedUrl) window.open(data.signedUrl, '_blank')
+                        }} className="text-xs text-indigo-600 hover:text-indigo-700 font-medium mt-0.5">
+                          View Receipt
+                        </button>
+                      )}
+                    </td>
+                    <td className="px-5 py-3">
+                      <span className={`inline-flex px-2.5 py-1 rounded-lg text-xs font-semibold ${statusBadge(leave.status)}`}>
+                        {statusLabel(leave.status)}
+                      </span>
+                      {leave.approved_by && leave.status !== 'cancellation_requested' && (
+                        <p className="text-[10px] text-slate-400 mt-0.5">by {leave.approved_by}</p>
+                      )}
+                    </td>
+                    <td className="px-5 py-3">
+                      {tab === 'my' && profile && leave.user_id === profile.id &&
+                        (leave.status === 'pending' || leave.status === 'approved') && (
+                        <button onClick={() => { setCancellingLeave(leave); setCancelReason(''); setCancelError('') }}
+                          className="px-3 py-1 bg-orange-50 text-orange-600 text-xs font-semibold rounded-lg hover:bg-orange-100 transition whitespace-nowrap">
+                          Request Cancel
+                        </button>
+                      )}
+                      {tab === 'approvals' && leave.status === 'pending' && (
+                        <div className="flex gap-2">
+                          <button onClick={() => handleApproval(leave, 'approved')}
+                            className="px-3 py-1 bg-green-50 text-green-600 text-xs font-semibold rounded-lg hover:bg-green-100 transition">Approve</button>
+                          <button onClick={() => handleApproval(leave, 'rejected')}
+                            className="px-3 py-1 bg-red-50 text-red-600 text-xs font-semibold rounded-lg hover:bg-red-100 transition">Reject</button>
+                        </div>
+                      )}
+                      {tab === 'approvals' && leave.status === 'cancellation_requested' && (
+                        <div className="flex gap-2">
+                          <button onClick={() => handleCancellationApproval(leave, 'approve')}
+                            className="px-3 py-1 bg-orange-50 text-orange-600 text-xs font-semibold rounded-lg hover:bg-orange-100 transition whitespace-nowrap">Approve Cancel</button>
+                          <button onClick={() => handleCancellationApproval(leave, 'reject')}
+                            className="px-3 py-1 bg-slate-100 text-slate-600 text-xs font-semibold rounded-lg hover:bg-slate-200 transition whitespace-nowrap">Keep Leave</button>
+                        </div>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+                {filteredLeaves.length === 0 && (
+                  <tr><td colSpan={7} className="px-5 py-8 text-center text-sm text-slate-400">No leave records found</td></tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </>
       )}
     </>
   )

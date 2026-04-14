@@ -102,6 +102,7 @@ export default function PayslipsPage() {
   }
 
   async function handleDelete(payslip: Payslip) {
+    if (!confirm(`Delete ${MONTH_NAMES[payslip.month - 1]} ${payslip.year} payslip for ${payslip.user_name}? This cannot be undone.`)) return
     await supabase.storage.from('payslips').remove([payslip.file_path])
     await supabase.from('payslips').delete().eq('id', payslip.id)
     loadPayslips()
@@ -119,7 +120,7 @@ export default function PayslipsPage() {
             {isHrOrMgmt ? 'Upload and manage staff payslips' : 'View and download your payslips'}
           </p>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2 flex-wrap justify-end">
           <select
             value={filterYear}
             onChange={e => setFilterYear(Number(e.target.value))}
@@ -132,7 +133,7 @@ export default function PayslipsPage() {
           {isHrOrMgmt && (
             <button
               onClick={() => setShowForm(true)}
-              className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold px-5 py-2.5 rounded-xl transition"
+              className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold px-5 py-2.5 rounded-xl transition text-sm"
             >
               + Upload Payslip
             </button>

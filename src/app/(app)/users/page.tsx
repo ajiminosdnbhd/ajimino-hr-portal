@@ -327,12 +327,12 @@ export default function UsersPage() {
           <thead>
             <tr className="border-b border-gray-100">
               <th className="text-left text-xs font-medium text-slate-400 px-5 py-3">Name</th>
-              <th className="text-left text-xs font-medium text-slate-400 px-5 py-3">Department</th>
+              <th className="text-left text-xs font-medium text-slate-400 px-5 py-3 hidden sm:table-cell">Department</th>
               <th className="text-left text-xs font-medium text-slate-400 px-5 py-3">Role</th>
-              <th className="text-left text-xs font-medium text-slate-400 px-5 py-3">AL</th>
-              <th className="text-left text-xs font-medium text-slate-400 px-5 py-3">ML</th>
-              <th className="text-left text-xs font-medium text-slate-400 px-5 py-3">Join Date</th>
-              <th className="text-left text-xs font-medium text-slate-400 px-5 py-3">Phone</th>
+              <th className="text-left text-xs font-medium text-slate-400 px-5 py-3 hidden lg:table-cell">AL</th>
+              <th className="text-left text-xs font-medium text-slate-400 px-5 py-3 hidden lg:table-cell">ML</th>
+              <th className="text-left text-xs font-medium text-slate-400 px-5 py-3 hidden md:table-cell">Phone</th>
+              <th className="text-left text-xs font-medium text-slate-400 px-5 py-3 hidden xl:table-cell">Join Date</th>
               <th className="text-left text-xs font-medium text-slate-400 px-5 py-3">Actions</th>
             </tr>
           </thead>
@@ -355,8 +355,9 @@ export default function UsersPage() {
                       {user.name}
                       {isSelf && <span className="ml-1.5 text-[10px] text-indigo-500 font-semibold">(You)</span>}
                     </p>
+                    <p className="text-xs text-slate-400 sm:hidden">{user.department}</p>
                   </td>
-                  <td className="px-5 py-3">
+                  <td className="px-5 py-3 hidden sm:table-cell">
                     <span className="text-sm text-slate-600">{user.department}</span>
                   </td>
                   <td className="px-5 py-3">
@@ -368,17 +369,17 @@ export default function UsersPage() {
                       {user.role}
                     </span>
                   </td>
-                  <td className="px-5 py-3 text-sm text-slate-600">
+                  <td className="px-5 py-3 text-sm text-slate-600 hidden lg:table-cell">
                     {user.role === 'management' ? <span className="text-slate-300">—</span> : `${user.al_used}/${user.al_entitled}`}
                   </td>
-                  <td className="px-5 py-3 text-sm text-slate-600">
+                  <td className="px-5 py-3 text-sm text-slate-600 hidden lg:table-cell">
                     {user.role === 'management' ? <span className="text-slate-300">—</span> : `${user.ml_used}/${user.ml_entitled}`}
                   </td>
-                  <td className="px-5 py-3 text-sm text-slate-600">
-                    {new Date(user.join_date + 'T00:00:00').toLocaleDateString('en-MY', { day: 'numeric', month: 'short', year: 'numeric' })}
-                  </td>
-                  <td className="px-5 py-3 text-sm text-slate-600">
+                  <td className="px-5 py-3 text-sm text-slate-600 hidden md:table-cell">
                     {user.phone || <span className="text-slate-300">—</span>}
+                  </td>
+                  <td className="px-5 py-3 text-sm text-slate-600 hidden xl:table-cell">
+                    {new Date(user.join_date + 'T00:00:00').toLocaleDateString('en-MY', { day: 'numeric', month: 'short', year: 'numeric' })}
                   </td>
                   <td className="px-5 py-3">
                     <div className="flex items-center gap-2">
