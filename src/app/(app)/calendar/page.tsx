@@ -271,81 +271,273 @@ export default function PlannerPage() {
     try {
       const { default: jsPDF } = await import('jspdf')
       const { default: autoTable } = await import('jspdf-autotable')
-      const doc = new jsPDF({ orientation: 'landscape' })
-      const now = new Date().toLocaleDateString('en-MY', { day: 'numeric', month: 'long', year: 'numeric' })
 
-      doc.setFontSize(16); doc.setTextColor(10, 17, 40)
-      doc.text('AJIMINO SDN. BHD.', 14, 16)
-      doc.setFontSize(12); doc.setTextColor(60, 60, 60)
-      doc.text(`Planner — ${MONTHS[month]} ${year}`, 14, 24)
-      doc.setFontSize(9); doc.setTextColor(120, 120, 120)
-      doc.text(`Generated: ${now}`, 14, 30)
+      // A3 landscape for the calendar grid
+      const doc = new jsPDF({ orientation: 'landscape', format: 'a3' })
+      type DocWithAutoTable = typeof doc & { lastAutoTable: { finalY: number } }
+      const W = doc.internal.pageSize.getWidth()   // 420mm
+      const H = doc.internal.pageSize.getHeight()  // 297mm
+      const M = 10 // margin
 
-      let curY = 36
+      const pad2 = (n: number) => String(n).padStart(2, '0')
+      const shortDate = (d: string) =>
+        new Date(d + 'T00:00:00').toLocaleDateString('en-MY', { day: 'numeric', month: 'short', year: 'numeric' })
+      const clip = (text: string, maxW: number) => {
+        const lines = doc.splitTextToSize(text, maxW)
+        return lines[0] + (lines.length > 1 ? '...' : '')
+      }
 
-      // Events
-      doc.setFontSize(11); doc.setTextColor(10, 17, 40)
-      doc.text('Events', 14, curY)
+      // ── PAGE 1: Calendar grid ──────────────────────────────────────────────
+
+      // Header banner
+      doc.setFillColor(10, 17, 40)
+      doc.rect(0, 0, W, 20, 'F')
+      doc.setFontSize(15); doc.setTextColor(255, 255, 255); doc.setFont('helvetica', 'bold')
+      doc.text('AJIMINO SDN. BHD.  —  Monthly Planner', M, 13)
+      doc.setFontSize(11); doc.setFont('helvetica', 'normal')
+      doc.text(`${MONTHS[month]} ${year}`, W - M, 8, { align: 'right' })
+      doc.setFontSize(7.5); doc.setTextColor(180, 190, 210)
+      doc.text(`Generated: ${new Date().toLocaleDateString('en-MY', { day: 'numeric', month: 'long', year: 'numeric' })}`, W - M, 16, { align: 'right' })
+
+      // Calendar grid setup
+      const gridTop = 24
+      const dayHdrH = 8
+      const numCols = 7
+      const dm = new Date(year, month + 1, 0).getDate()
+      const fd = new Date(year, month, 1).getDay()
+      const numRows = Math.ceil((fd + dm) / 7)
+      const cellW = (W - M * 2) / numCols
+      const cellH = (H - gridTop - dayHdrH - 12) / numRows  // leave 12mm for legend
+
+      // Day header row
+      const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
+      dayNames.forEach((name, i) => {
+        const x = M + i * cellW
+        doc.setFillColor(i === 0 || i === 6 ? 235 : 225, i === 0 || i === 6 ? 230 : 228, i === 0 || i === 6 ? 250 : 248)
+        doc.rect(x, gridTop, cellW, dayHdrH, 'F')
+        doc.setDrawColor(190, 190, 205); doc.setLineWidth(0.2)
+        doc.rect(x, gridTop, cellW, dayHdrH, 'S')
+        doc.setFontSize(8); doc.setTextColor(10, 17, 40); doc.setFont('helvetica', 'bold')
+        doc.text(name, x + cellW / 2, gridTop + 5.3, { align: 'center' })
+      })
+
+      // Calendar cells
+      for (let row = 0; row < numRows; row++) {
+        for (let col = 0; col < numCols; col++) {
+          const idx = row * 7 + col
+          const dayNum = idx - fd + 1
+          const cx = M + col * cellW
+          const cy = gridTop + dayHdrH + row * cellH
+          const isThisMonth = dayNum >= 1 && dayNum <= dm
+          const isWeekend = col === 0 || col === 6
+          const dateStr = `${year}-${pad2(month + 1)}-${pad2(dayNum)}`
+
+          // Background
+          doc.setFillColor(
+            isThisMonth ? (isWeekend ? 250 : 255) : 242,
+            isThisMonth ? (isWeekend ? 248 : 255) : 242,
+            isThisMonth ? (isWeekend ? 255 : 255) : 248
+          )
+          doc.rect(cx, cy, cellW, cellH, 'F')
+          doc.setDrawColor(200, 200, 215); doc.setLineWidth(0.15)
+          doc.rect(cx, cy, cellW, cellH, 'S')
+
+          if (!isThisMonth) continue
+
+          // Day number
+          const isToday = dateStr === todayStr
+          if (isToday) {
+            doc.setFillColor(79, 70, 229)
+            doc.rect(cx + cellW - 9, cy + 0.5, 8, 6, 'F')
+            doc.setFontSize(7); doc.setTextColor(255, 255, 255); doc.setFont('helvetica', 'bold')
+            doc.text(String(dayNum), cx + cellW - 5, cy + 5, { align: 'center' })
+          } else {
+            doc.setFontSize(8); doc.setTextColor(isWeekend ? 120 : 30, isWeekend ? 60 : 30, isWeekend ? 180 : 60)
+            doc.setFont('helvetica', 'bold')
+            doc.text(String(dayNum), cx + cellW - 2.5, cy + 5.5, { align: 'right' })
+          }
+
+          let lineY = cy + 8.5
+          const lh = 4.0  // line height per item
+          const maxItems = Math.floor((cellH - 9) / lh)
+          let drawn = 0
+          let total = 0
+
+          // Holiday
+          const hol = isHoliday(dateStr)
+          if (hol) {
+            total++
+            if (drawn < maxItems) {
+              doc.setFillColor(254, 226, 226)
+              doc.rect(cx + 0.8, lineY - 2.8, cellW - 1.6, lh, 'F')
+              doc.setFontSize(5.8); doc.setTextColor(185, 28, 28); doc.setFont('helvetica', 'bold')
+              doc.text(clip(`[PH] ${hol.name}`, cellW - 3), cx + 1.5, lineY, {})
+              lineY += lh; drawn++
+            }
+          }
+
+          // Events
+          const dayEvts = events.filter(ev => ev.date === dateStr)
+          total += dayEvts.length
+          for (const ev of dayEvts) {
+            if (drawn >= maxItems) break
+            const r2 = parseInt(ev.color.slice(1, 3), 16)
+            const g2 = parseInt(ev.color.slice(3, 5), 16)
+            const b2 = parseInt(ev.color.slice(5, 7), 16)
+            doc.setFillColor(r2, g2, b2)
+            doc.rect(cx + 0.8, lineY - 2.8, cellW - 1.6, lh, 'F')
+            doc.setFontSize(5.8); doc.setTextColor(255, 255, 255); doc.setFont('helvetica', 'bold')
+            const tStr = ev.event_time ? ` ${formatTime(ev.event_time)}` : ''
+            doc.text(clip(ev.title + tStr, cellW - 3), cx + 1.5, lineY)
+            lineY += lh; drawn++
+          }
+
+          // Leaves
+          const dayLeaves = leaves.filter(l => l.start_date <= dateStr && l.end_date >= dateStr && l.status !== 'rejected')
+          total += dayLeaves.length
+          for (const lv of dayLeaves) {
+            if (drawn >= maxItems) break
+            doc.setFillColor(209, 250, 229)
+            doc.rect(cx + 0.8, lineY - 2.8, cellW - 1.6, lh, 'F')
+            doc.setFontSize(5.8); doc.setTextColor(5, 122, 85); doc.setFont('helvetica', 'normal')
+            const lvType = lv.type === 'Annual Leave' ? 'AL' : 'ML'
+            doc.text(clip(`${lv.user_name} (${lvType})`, cellW - 3), cx + 1.5, lineY)
+            lineY += lh; drawn++
+          }
+
+          // Bookings
+          const dayBkgs = bookings.filter(b => b.date === dateStr)
+          total += dayBkgs.length
+          for (const bk of dayBkgs) {
+            if (drawn >= maxItems) break
+            doc.setFillColor(219, 234, 254)
+            doc.rect(cx + 0.8, lineY - 2.8, cellW - 1.6, lh, 'F')
+            doc.setFontSize(5.8); doc.setTextColor(30, 64, 175); doc.setFont('helvetica', 'normal')
+            const roomShort = bk.room_id === 'big-meeting-room' ? 'Big Rm' : bk.room_id === 'small-meeting-room' ? 'Sm Rm' : 'Disc Rm'
+            doc.text(clip(`${roomShort} ${bk.start_time.slice(0,5)}-${bk.end_time.slice(0,5)} ${bk.user_name}`, cellW - 3), cx + 1.5, lineY)
+            lineY += lh; drawn++
+          }
+
+          // Overflow indicator
+          if (total > maxItems) {
+            doc.setFontSize(5); doc.setTextColor(100, 100, 130); doc.setFont('helvetica', 'italic')
+            doc.text(`+${total - maxItems} more`, cx + 1.5, cy + cellH - 1.5)
+          }
+        }
+      }
+
+      // Legend
+      const legY = H - 5
+      const legItems: [number, number, number, string][] = [
+        [79, 70, 229, 'Event'],
+        [209, 250, 229, 'Leave'],   // fill
+        [219, 234, 254, 'Booking'], // fill
+        [254, 226, 226, 'Public Holiday'],
+      ]
+      const legTextColors: [number, number, number][] = [
+        [255, 255, 255], [5, 122, 85], [30, 64, 175], [185, 28, 28]
+      ]
+      let legX = M
+      legItems.forEach(([r2, g2, b2, label], i) => {
+        doc.setFillColor(r2, g2, b2)
+        doc.rect(legX, legY - 3.5, 10, 4, 'F')
+        doc.setFontSize(6); doc.setTextColor(...legTextColors[i]); doc.setFont('helvetica', 'bold')
+        doc.text(label.substring(0, 2), legX + 5, legY - 0.5, { align: 'center' })
+        doc.setTextColor(40, 40, 60); doc.setFont('helvetica', 'normal')
+        doc.text(label, legX + 12, legY - 0.5)
+        legX += label.length * 2.2 + 18
+      })
+
+      // ── PAGE 2: Detail tables ──────────────────────────────────────────────
+      doc.addPage('a3', 'landscape')
+
+      doc.setFillColor(10, 17, 40)
+      doc.rect(0, 0, W, 20, 'F')
+      doc.setFontSize(15); doc.setTextColor(255, 255, 255); doc.setFont('helvetica', 'bold')
+      doc.text('AJIMINO SDN. BHD.  —  Planner Details', M, 13)
+      doc.setFontSize(11); doc.setFont('helvetica', 'normal')
+      doc.text(`${MONTHS[month]} ${year}`, W - M, 13, { align: 'right' })
+
+      let curY = 28
+
+      // Events table
+      doc.setFontSize(10); doc.setTextColor(10, 17, 40); doc.setFont('helvetica', 'bold')
+      doc.text('Events', M, curY); curY += 2
       autoTable(doc, {
-        startY: curY + 4,
-        head: [['Date', 'Title', 'Time', 'Visibility', 'Created By', 'Description']],
+        startY: curY,
+        head: [['Date', 'Title', 'Time', 'Visibility / Target', 'Created By', 'Description']],
         body: events.length > 0 ? events.map(ev => [
-          new Date(ev.date + 'T00:00:00').toLocaleDateString('en-MY', { day: 'numeric', month: 'short', year: 'numeric' }),
+          shortDate(ev.date),
           ev.title,
           ev.event_time ? (formatTimeRange(ev.event_time, ev.event_end_time) || '') : 'Whole Day',
-          ev.visibility === 'all' ? 'All Staff' : ev.visibility === 'department' ? `Dept: ${ev.target_department}` : 'Individual',
-          ev.created_by,
-          ev.description || '',
-        ]) : [['—', 'No events this month', '', '', '', '']],
-        styles: { fontSize: 8, cellPadding: 2.5 },
+          ev.visibility === 'all' ? 'All Staff'
+            : ev.visibility === 'department' ? `Department: ${ev.target_department}`
+            : `Individual: ${ev.target_user_ids?.map(uid => allProfiles.find(p => p.id === uid)?.name || uid).join(', ')}`,
+          `${ev.created_by} (${ev.created_by_role || '—'})`,
+          ev.description || '—',
+        ]) : [['', 'No events this month', '', '', '', '']],
+        styles: { fontSize: 8, cellPadding: 2.5, overflow: 'linebreak' },
         headStyles: { fillColor: [10, 17, 40], textColor: 255, fontStyle: 'bold' },
         alternateRowStyles: { fillColor: [248, 249, 251] },
+        columnStyles: { 3: { cellWidth: 55 }, 5: { cellWidth: 75 } },
       })
 
-      curY = (doc as unknown as { lastAutoTable: { finalY: number } }).lastAutoTable.finalY + 10
+      curY = (doc as DocWithAutoTable).lastAutoTable.finalY + 10
 
-      // Leaves
-      doc.setFontSize(11); doc.setTextColor(10, 17, 40)
-      doc.text('Leaves', 14, curY)
+      // Leaves table
+      doc.setFontSize(10); doc.setTextColor(10, 17, 40); doc.setFont('helvetica', 'bold')
+      doc.text('Leave Applications', M, curY); curY += 2
       const approvedLeaves = leaves.filter(l => l.status !== 'rejected')
       autoTable(doc, {
-        startY: curY + 4,
-        head: [['Staff', 'Department', 'Type', 'Start', 'End', 'Days', 'Status', 'Approved By']],
+        startY: curY,
+        head: [['Staff', 'Department', 'Type', 'Start Date', 'End Date', 'Days', 'Status', 'Reason', 'Approved By']],
         body: approvedLeaves.length > 0 ? approvedLeaves.map(l => [
           l.user_name, l.department,
-          l.type === 'Annual Leave' ? 'AL' : 'ML',
-          new Date(l.start_date + 'T00:00:00').toLocaleDateString('en-MY', { day: 'numeric', month: 'short' }),
-          new Date(l.end_date + 'T00:00:00').toLocaleDateString('en-MY', { day: 'numeric', month: 'short' }),
-          l.days.toString(),
+          l.type,
+          shortDate(l.start_date),
+          shortDate(l.end_date),
+          `${l.days} day${l.days !== 1 ? 's' : ''}`,
           l.status.charAt(0).toUpperCase() + l.status.slice(1),
+          l.reason || '—',
           l.approved_by || '—',
-        ]) : [['—', 'No leaves this month', '', '', '', '', '', '']],
-        styles: { fontSize: 8, cellPadding: 2.5 },
+        ]) : [['', 'No leave applications this month', '', '', '', '', '', '', '']],
+        styles: { fontSize: 8, cellPadding: 2.5, overflow: 'linebreak' },
         headStyles: { fillColor: [5, 150, 105], textColor: 255, fontStyle: 'bold' },
         alternateRowStyles: { fillColor: [248, 249, 251] },
+        columnStyles: { 7: { cellWidth: 70 } },
       })
 
-      curY = (doc as unknown as { lastAutoTable: { finalY: number } }).lastAutoTable.finalY + 10
+      curY = (doc as DocWithAutoTable).lastAutoTable.finalY + 10
 
-      // Room Bookings
-      doc.setFontSize(11); doc.setTextColor(10, 17, 40)
-      doc.text('Room Bookings', 14, curY)
+      // Room Bookings table
+      doc.setFontSize(10); doc.setTextColor(10, 17, 40); doc.setFont('helvetica', 'bold')
+      doc.text('Room Bookings', M, curY); curY += 2
       autoTable(doc, {
-        startY: curY + 4,
+        startY: curY,
         head: [['Date', 'Room', 'Time', 'Booked By', 'Department', 'Purpose', 'Attendees']],
         body: bookings.length > 0 ? bookings.map(b => [
-          new Date(b.date + 'T00:00:00').toLocaleDateString('en-MY', { day: 'numeric', month: 'short', year: 'numeric' }),
+          shortDate(b.date),
           ROOMS.find(r => r.id === b.room_id)?.name || b.room_id,
           `${b.start_time.slice(0, 5)} – ${b.end_time.slice(0, 5)}`,
-          b.user_name, b.department, b.purpose,
+          b.user_name, b.department,
+          b.purpose,
           b.attendee_names?.join(', ') || '—',
-        ]) : [['—', 'No bookings this month', '', '', '', '', '']],
-        styles: { fontSize: 8, cellPadding: 2.5 },
+        ]) : [['', 'No bookings this month', '', '', '', '', '']],
+        styles: { fontSize: 8, cellPadding: 2.5, overflow: 'linebreak' },
         headStyles: { fillColor: [37, 99, 235], textColor: 255, fontStyle: 'bold' },
         alternateRowStyles: { fillColor: [248, 249, 251] },
+        columnStyles: { 5: { cellWidth: 65 }, 6: { cellWidth: 65 } },
       })
 
-      doc.save(`Planner_${year}_${String(month + 1).padStart(2, '0')}.pdf`)
+      // Page numbers
+      const totalPages = (doc as unknown as { internal: { getNumberOfPages: () => number } }).internal.getNumberOfPages()
+      for (let i = 1; i <= totalPages; i++) {
+        doc.setPage(i)
+        doc.setFontSize(7); doc.setTextColor(150, 150, 160); doc.setFont('helvetica', 'normal')
+        doc.text(`Page ${i} of ${totalPages}  —  AJIMINO SDN. BHD. Confidential`, W / 2, H - 3, { align: 'center' })
+      }
+
+      doc.save(`Planner_${year}_${pad2(month + 1)}_${MONTHS[month]}.pdf`)
     } finally {
       setExporting(false)
     }
