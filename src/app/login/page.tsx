@@ -1,16 +1,25 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { createClient } from '@/lib/supabase/client'
+import { useProfileContext } from '@/lib/ProfileContext'
 import { AlertCircle, Loader2, CheckCircle2, Eye, EyeOff } from 'lucide-react'
 import Image from 'next/image'
 
 export default function LoginPage() {
+  const { profile, loading: profileLoading } = useProfileContext()
   const [email,    setEmail]    = useState('')
   const [password, setPassword] = useState('')
   const [showPass, setShowPass] = useState(false)
   const [loading,  setLoading]  = useState(false)
   const [error,    setError]    = useState<string | null>(null)
+
+  // If localStorage backup restored the session, redirect to dashboard automatically
+  useEffect(() => {
+    if (!profileLoading && profile) {
+      window.location.href = '/dashboard'
+    }
+  }, [profile, profileLoading])
 
   const canSubmit = !loading && !!email && !!password
 

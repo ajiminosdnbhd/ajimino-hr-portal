@@ -16,6 +16,9 @@ export default function RootLayout({
   return (
     <html lang="en">
       <head>
+        {/* Inline bfcache guard — runs before React, catches very old page snapshots */}
+        {/* eslint-disable-next-line @next/next/no-sync-scripts */}
+        <script dangerouslySetInnerHTML={{ __html: `window.addEventListener('pageshow',function(e){if(e.persisted)window.location.reload();});` }} />
         <link rel="preconnect" href="https://fonts.googleapis.com" />
         <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
         <link
