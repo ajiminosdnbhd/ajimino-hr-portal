@@ -188,22 +188,28 @@ export default function PlannerPage() {
 
   async function handleSubmitEvent(e: React.FormEvent) {
     e.preventDefault(); setFormError(''); setSaving(true)
-    if (!profile) return
-    const payload = {
-      title: formTitle, date: formDate,
-      event_time: formTimeMode === 'custom' ? formTime : null,
-      event_end_time: formTimeMode === 'custom' ? formEndTime : null,
-      description: formDesc || null, color: formColor,
-      created_by: profile.name, created_by_id: profile.id, created_by_role: profile.role,
-      visibility: formVisibility,
-      target_department: formVisibility === 'department' ? formDept : null,
-      target_user_ids: formVisibility === 'individual' ? formUserIds : null,
+    if (!profile) { setSaving(false); return }
+    try {
+      const payload = {
+        title: formTitle, date: formDate,
+        event_time: formTimeMode === 'custom' ? formTime : null,
+        event_end_time: formTimeMode === 'custom' ? formEndTime : null,
+        description: formDesc || null, color: formColor,
+        created_by: profile.name, created_by_id: profile.id, created_by_role: profile.role,
+        visibility: formVisibility,
+        target_department: formVisibility === 'department' ? formDept : null,
+        target_user_ids: formVisibility === 'individual' ? formUserIds : null,
+      }
+      const res = editingEvent
+        ? await supabase.from('events').update(payload).eq('id', editingEvent.id)
+        : await supabase.from('events').insert(payload)
+      if (res.error) { setFormError(res.error.message); setSaving(false); return }
+      closeForm(); loadMonthData()
+    } catch (err: unknown) {
+      setFormError(err instanceof Error ? err.message : 'An error occurred')
+    } finally {
+      setSaving(false)
     }
-    const res = editingEvent
-      ? await supabase.from('events').update(payload).eq('id', editingEvent.id)
-      : await supabase.from('events').insert(payload)
-    if (res.error) { setFormError(res.error.message); setSaving(false); return }
-    closeForm(); loadMonthData(); setSaving(false)
   }
 
   async function handleDeleteEvent(id: string) {
@@ -220,18 +226,24 @@ export default function PlannerPage() {
 
   async function handleSubmitBooking(e: React.FormEvent) {
     e.preventDefault(); setBkError(''); setBkSaving(true)
-    if (!profile) return
+    if (!profile) { setBkSaving(false); return }
     if (bkStart >= bkEnd) { setBkError('End time must be after start time'); setBkSaving(false); return }
-    if (getBookingConflicts().length > 0) { setBkError('Time slot conflicts with an existing booking'); setBkSaving(false); return }
-    const attendees = allProfiles.filter(p => bkAttendeeIds.includes(p.id))
-    const { error } = await supabase.from('bookings').insert({
-      user_id: profile.id, user_name: profile.name, department: profile.department,
-      room_id: bkRoom, date: bkDate, start_time: bkStart, end_time: bkEnd, purpose: bkPurpose,
-      attendee_ids: bkAttendeeIds.length > 0 ? bkAttendeeIds : null,
-      attendee_names: attendees.length > 0 ? attendees.map(p => p.name) : null,
-    })
-    if (error) { setBkError(error.message); setBkSaving(false); return }
-    closeForm(); loadMonthData(); setBkSaving(false)
+    if (getBookingConflicts().length > 0) { setBkError('This time slot is already booked for that room'); setBkSaving(false); return }
+    try {
+      const attendees = allProfiles.filter(p => bkAttendeeIds.includes(p.id))
+      const { error } = await supabase.from('bookings').insert({
+        user_id: profile.id, user_name: profile.name, department: profile.department,
+        room_id: bkRoom, date: bkDate, start_time: bkStart, end_time: bkEnd, purpose: bkPurpose,
+        attendee_ids: bkAttendeeIds.length > 0 ? bkAttendeeIds : null,
+        attendee_names: attendees.length > 0 ? attendees.map(p => p.name) : null,
+      })
+      if (error) { setBkError(error.message); return }
+      closeForm(); loadMonthData()
+    } catch (err: unknown) {
+      setBkError(err instanceof Error ? err.message : 'An error occurred')
+    } finally {
+      setBkSaving(false)
+    }
   }
 
   async function handleCancelBooking(id: string) {
