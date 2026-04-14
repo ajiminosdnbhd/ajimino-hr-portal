@@ -26,54 +26,63 @@ export function ProfileProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     let mounted = true
 
-    async function loadProfile() {
+    async function fetchProfileForUser(userId: string) {
+      const { data } = await supabase
+        .from('profiles').select('*').eq('id', userId).single()
+      if (mounted && data) {
+        setProfile(data as Profile)
+        setLoading(false)
+      }
+    }
+
+    // onAuthStateChange fires for ALL session events including INITIAL_SESSION
+    // (auto-restore from cookies on browser reopen), SIGNED_IN, TOKEN_REFRESHED.
+    // This is the PRIMARY auth path — it covers every case reliably.
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+      if (event === 'SIGNED_OUT') {
+        if (mounted) { setProfile(null); setLoading(false) }
+        return
+      }
+      // INITIAL_SESSION = browser reopened and session restored from cookies
+      // SIGNED_IN = fresh login   TOKEN_REFRESHED = token auto-renewed
+      if (session?.user && mounted) {
+        await fetchProfileForUser(session.user.id)
+      }
+    })
+
+    // Fallback: if onAuthStateChange never fires (e.g. no local session),
+    // call the server-side API route which reads from HTTP-only cookies.
+    // This handles edge cases where the browser client can't read the session.
+    const timer = setTimeout(async () => {
+      if (!mounted || profile !== null) return
       try {
-        // Primary path: call server-side API route which reads the session
-        // from HTTP-only cookies. This ALWAYS works — even when the browser
-        // was closed and reopened (localStorage cleared), because HTTP-only
-        // cookies are persistent and don't get wiped on browser close.
         const res = await fetch('/api/profile', { credentials: 'include' })
         if (res.ok) {
           const json = await res.json()
           const { profile: data, access_token, refresh_token } = json
-          if (mounted && data) {
-            // Restore the session into the browser client memory so ALL
-            // subsequent Supabase queries (leaves, stats, bookings, etc.)
-            // include the Authorization header and pass RLS checks.
+          if (mounted && data && profile === null) {
             if (access_token && refresh_token) {
+              // Restore browser client session so subsequent queries have auth
               await supabase.auth.setSession({ access_token, refresh_token })
             }
             setProfile(data as Profile)
             setLoading(false)
-            return
           }
         } else {
-          console.warn('Profile API returned', res.status)
+          // No session at all — user is not logged in
+          if (mounted) setLoading(false)
         }
-      } catch (err) {
-        console.error('Profile API error:', err)
+      } catch {
+        if (mounted) setLoading(false)
       }
+    }, 500) // wait 500ms for onAuthStateChange to fire first
 
-      if (mounted) setLoading(false)
+    return () => {
+      mounted = false
+      subscription.unsubscribe()
+      clearTimeout(timer)
     }
-
-    loadProfile()
-
-    // Listen for future auth changes (login, logout, token refresh)
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
-      if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED' || event === 'USER_UPDATED') {
-        if (session?.user) {
-          const { data } = await supabase
-            .from('profiles').select('*').eq('id', session.user.id).single()
-          if (mounted && data) { setProfile(data as Profile); setLoading(false) }
-        }
-      } else if (event === 'SIGNED_OUT') {
-        if (mounted) { setProfile(null); setLoading(false) }
-      }
-    })
-
-    return () => { mounted = false; subscription.unsubscribe() }
-  }, [supabase])
+  }, [supabase]) // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <ProfileContext.Provider value={{ profile, setProfile, loading, supabase }}>
