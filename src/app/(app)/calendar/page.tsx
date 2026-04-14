@@ -19,10 +19,10 @@ const EVENT_COLORS = [
   { value: '#0891b2', label: 'Cyan' },
 ]
 
-const TIME_SLOTS = Array.from({ length: 20 }, (_, i) => {
-  const hour = Math.floor(i / 2) + 8
-  const min = i % 2 === 0 ? '00' : '30'
-  return `${String(hour).padStart(2, '0')}:${min}`
+// 7:00 AM – 10:00 PM in 30-min steps (used for both events and room bookings)
+const TIME_SLOTS = Array.from({ length: 31 }, (_, i) => {
+  const mins = 420 + i * 30 // start at 7:00
+  return `${String(Math.floor(mins / 60)).padStart(2, '0')}:${mins % 60 === 0 ? '00' : '30'}`
 })
 
 function formatTime(t: string | null) {
@@ -60,6 +60,7 @@ export default function PlannerPage() {
   const [formVisibility, setFormVisibility] = useState<'all' | 'department' | 'individual'>('all')
   const [formDept, setFormDept] = useState('')
   const [formUserIds, setFormUserIds] = useState<string[]>([])
+  const [formTimeMode, setFormTimeMode] = useState<'allday' | 'custom'>('allday')
   const [formError, setFormError] = useState('')
   const [saving, setSaving] = useState(false)
 
@@ -140,27 +141,28 @@ export default function PlannerPage() {
   function openAddEvent(date?: string) {
     setEditingEvent(null)
     setFormDate(date || new Date().toISOString().split('T')[0])
-    setFormTitle(''); setFormTime(''); setFormEndTime(''); setFormDesc('')
+    setFormTitle(''); setFormTime('09:00'); setFormEndTime('10:00'); setFormDesc('')
     setFormColor('#4f46e5'); setFormVisibility('all'); setFormDept(''); setFormUserIds([])
-    setFormError(''); setActiveForm('event')
+    setFormTimeMode('allday'); setFormError(''); setActiveForm('event')
   }
 
   function openEditEvent(ev: CalendarEvent) {
     setEditingEvent(ev)
     setFormTitle(ev.title); setFormDate(ev.date)
-    setFormTime(ev.event_time?.slice(0, 5) || '')
-    setFormEndTime(ev.event_end_time?.slice(0, 5) || '')
+    setFormTime(ev.event_time?.slice(0, 5) || '09:00')
+    setFormEndTime(ev.event_end_time?.slice(0, 5) || '10:00')
     setFormDesc(ev.description || ''); setFormColor(ev.color)
     setFormVisibility(ev.visibility || 'all')
     setFormDept(ev.target_department || ''); setFormUserIds(ev.target_user_ids || [])
+    setFormTimeMode(ev.event_time ? 'custom' : 'allday')
     setFormError(''); setActiveForm('event')
   }
 
   function closeForm() {
     setActiveForm(null); setEditingEvent(null)
-    setFormTitle(''); setFormDate(''); setFormTime(''); setFormEndTime(''); setFormDesc('')
+    setFormTitle(''); setFormDate(''); setFormTime('09:00'); setFormEndTime('10:00'); setFormDesc('')
     setFormColor('#4f46e5'); setFormVisibility('all'); setFormDept(''); setFormUserIds([])
-    setFormError('')
+    setFormTimeMode('allday'); setFormError('')
     setBkError(''); setBkPurpose(''); setBkRoom(ROOMS[0].id); setBkStart('09:00'); setBkEnd('10:00')
   }
 
@@ -169,7 +171,8 @@ export default function PlannerPage() {
     if (!profile) return
     const payload = {
       title: formTitle, date: formDate,
-      event_time: formTime || null, event_end_time: formEndTime || null,
+      event_time: formTimeMode === 'custom' ? formTime : null,
+      event_end_time: formTimeMode === 'custom' ? formEndTime : null,
       description: formDesc || null, color: formColor,
       created_by: profile.name, created_by_id: profile.id, created_by_role: profile.role,
       visibility: formVisibility,
@@ -593,17 +596,35 @@ export default function PlannerPage() {
                 <input type="date" value={formDate} onChange={e => setFormDate(e.target.value)} required
                   className="w-full px-3 py-2.5 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" />
               </div>
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">Start Time <span className="text-slate-400 font-normal">(opt)</span></label>
-                  <input type="time" value={formTime} onChange={e => setFormTime(e.target.value)}
-                    className="w-full px-3 py-2.5 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-2">Time</label>
+                <div className="flex gap-2 mb-3">
+                  {(['allday', 'custom'] as const).map(mode => (
+                    <button key={mode} type="button"
+                      onClick={() => setFormTimeMode(mode)}
+                      className={`flex-1 py-2 rounded-xl text-xs font-semibold border transition ${formTimeMode === mode ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-slate-600 border-gray-200 hover:border-indigo-300'}`}>
+                      {mode === 'allday' ? 'Whole Day' : 'Custom Time'}
+                    </button>
+                  ))}
                 </div>
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">End Time <span className="text-slate-400 font-normal">(opt)</span></label>
-                  <input type="time" value={formEndTime} onChange={e => setFormEndTime(e.target.value)}
-                    className="w-full px-3 py-2.5 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" />
-                </div>
+                {formTimeMode === 'custom' && (
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-xs font-medium text-slate-600 mb-1">Start</label>
+                      <select value={formTime} onChange={e => setFormTime(e.target.value)}
+                        className="w-full px-3 py-2.5 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                        {TIME_SLOTS.map(t => <option key={t} value={t}>{formatTime(t)}</option>)}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-slate-600 mb-1">End</label>
+                      <select value={formEndTime} onChange={e => setFormEndTime(e.target.value)}
+                        className="w-full px-3 py-2.5 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                        {TIME_SLOTS.map(t => <option key={t} value={t}>{formatTime(t)}</option>)}
+                      </select>
+                    </div>
+                  </div>
+                )}
               </div>
               <div>
                 <label className="block text-sm font-medium text-slate-700 mb-1">Description <span className="text-slate-400 font-normal">(opt)</span></label>
