@@ -20,69 +20,73 @@ export function ProfileProvider({ children }: { children: React.ReactNode }) {
 
   const supabase = useMemo(() => createBrowserClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    { cookieOptions: { maxAge: 60 * 60 * 24 * 365 } } // 1-year persistent cookie
   ), [])
 
   useEffect(() => {
     let mounted = true
 
-    async function fetchProfileForUser(userId: string) {
-      const { data } = await supabase
-        .from('profiles').select('*').eq('id', userId).single()
-      if (mounted && data) {
-        setProfile(data as Profile)
-        setLoading(false)
+    async function loadProfile() {
+      try {
+        // ── Step 1: browser client reads session directly from cookies ────
+        // createBrowserClient stores the session in document.cookie.
+        // getSession() reassembles it from cookie chunks — no network call.
+        // This is the fastest, most reliable path after browser reopen.
+        const { data: { session } } = await supabase.auth.getSession()
+        if (session?.user) {
+          const { data } = await supabase
+            .from('profiles').select('*').eq('id', session.user.id).single()
+          if (mounted && data) {
+            setProfile(data as Profile)
+            setLoading(false)
+            return
+          }
+        }
+
+        // ── Step 2: server-side fallback via HTTP-only cookies ────────────
+        // Runs when the browser client cookie is missing/expired but the
+        // server-side HTTP-only cookie is still valid.
+        const res = await fetch('/api/profile', { credentials: 'include' })
+        if (res.ok) {
+          const { profile: data, access_token, refresh_token } = await res.json()
+          if (mounted && data) {
+            // Restore browser client session so all subsequent queries have auth
+            if (access_token && refresh_token) {
+              await supabase.auth.setSession({ access_token, refresh_token })
+            }
+            setProfile(data as Profile)
+            setLoading(false)
+            return
+          }
+        }
+      } catch (err) {
+        console.error('loadProfile error:', err)
       }
+
+      // No session found at all
+      if (mounted) setLoading(false)
     }
 
-    // onAuthStateChange fires for ALL session events including INITIAL_SESSION
-    // (auto-restore from cookies on browser reopen), SIGNED_IN, TOKEN_REFRESHED.
-    // This is the PRIMARY auth path — it covers every case reliably.
+    loadProfile()
+
+    // ── Ongoing: react to auth events (login, logout, token refresh) ──────
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
       if (event === 'SIGNED_OUT') {
         if (mounted) { setProfile(null); setLoading(false) }
         return
       }
-      // INITIAL_SESSION = browser reopened and session restored from cookies
-      // SIGNED_IN = fresh login   TOKEN_REFRESHED = token auto-renewed
-      if (session?.user && mounted) {
-        await fetchProfileForUser(session.user.id)
+      if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED' || event === 'USER_UPDATED') {
+        if (session?.user && mounted) {
+          const { data } = await supabase
+            .from('profiles').select('*').eq('id', session.user.id).single()
+          if (mounted && data) { setProfile(data as Profile); setLoading(false) }
+        }
       }
     })
 
-    // Fallback: if onAuthStateChange never fires (e.g. no local session),
-    // call the server-side API route which reads from HTTP-only cookies.
-    // This handles edge cases where the browser client can't read the session.
-    const timer = setTimeout(async () => {
-      if (!mounted || profile !== null) return
-      try {
-        const res = await fetch('/api/profile', { credentials: 'include' })
-        if (res.ok) {
-          const json = await res.json()
-          const { profile: data, access_token, refresh_token } = json
-          if (mounted && data && profile === null) {
-            if (access_token && refresh_token) {
-              // Restore browser client session so subsequent queries have auth
-              await supabase.auth.setSession({ access_token, refresh_token })
-            }
-            setProfile(data as Profile)
-            setLoading(false)
-          }
-        } else {
-          // No session at all — user is not logged in
-          if (mounted) setLoading(false)
-        }
-      } catch {
-        if (mounted) setLoading(false)
-      }
-    }, 500) // wait 500ms for onAuthStateChange to fire first
-
-    return () => {
-      mounted = false
-      subscription.unsubscribe()
-      clearTimeout(timer)
-    }
-  }, [supabase]) // eslint-disable-line react-hooks/exhaustive-deps
+    return () => { mounted = false; subscription.unsubscribe() }
+  }, [supabase])
 
   return (
     <ProfileContext.Provider value={{ profile, setProfile, loading, supabase }}>
