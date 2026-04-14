@@ -67,6 +67,25 @@ export interface Payslip {
   created_at: string
 }
 
+export interface CalendarEvent {
+  id: string
+  title: string
+  date: string
+  event_time: string | null       // start time (kept for backward compat)
+  event_end_time: string | null   // end time
+  description: string | null
+  color: string
+  created_by: string
+  created_at: string
+  // Visibility targeting
+  visibility: 'all' | 'department' | 'individual'
+  target_department: string | null
+  target_user_ids: string[] | null
+  // Ownership — used to determine if current user can edit/delete
+  created_by_id: string | null
+  created_by_role: 'management' | 'hr' | 'staff' | null
+}
+
 export const ROOMS = [
   { id: 'big-meeting-room', name: 'Big Meeting Room', capacity: 20, color: '#4f46e5' },
   { id: 'small-meeting-room', name: 'Small Meeting Room', capacity: 8, color: '#059669' },

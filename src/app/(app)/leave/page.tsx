@@ -4,6 +4,66 @@ import { useEffect, useState } from 'react'
 import { useProfile } from '@/lib/useProfile'
 import { Leave, Profile } from '@/lib/types'
 
+async function exportLeavesPDF(leaves: Leave[], staffProfiles: Profile[], title: string) {
+  const { default: jsPDF } = await import('jspdf')
+  const { default: autoTable } = await import('jspdf-autotable')
+
+  const doc = new jsPDF({ orientation: 'landscape' })
+  const now = new Date().toLocaleDateString('en-MY', { day: 'numeric', month: 'long', year: 'numeric' })
+
+  doc.setFontSize(16)
+  doc.setTextColor(10, 17, 40)
+  doc.text('AJIMINO SDN. BHD.', 14, 16)
+  doc.setFontSize(11)
+  doc.setTextColor(80, 80, 80)
+  doc.text(title, 14, 23)
+  doc.setFontSize(9)
+  doc.text(`Generated: ${now}`, 14, 29)
+
+  autoTable(doc, {
+    startY: 34,
+    head: [['Staff Name', 'Department', 'Type', 'Start Date', 'End Date', 'Days', 'Reason', 'Status', 'Approved By']],
+    body: leaves.map(l => [
+      l.user_name,
+      l.department,
+      l.type === 'Annual Leave' ? 'AL' : 'ML',
+      new Date(l.start_date + 'T00:00:00').toLocaleDateString('en-MY', { day: 'numeric', month: 'short', year: 'numeric' }),
+      new Date(l.end_date + 'T00:00:00').toLocaleDateString('en-MY', { day: 'numeric', month: 'short', year: 'numeric' }),
+      l.days.toString(),
+      l.reason,
+      l.status.charAt(0).toUpperCase() + l.status.slice(1),
+      l.approved_by || '-',
+    ]),
+    styles: { fontSize: 8, cellPadding: 3 },
+    headStyles: { fillColor: [10, 17, 40], textColor: 255, fontStyle: 'bold' },
+    alternateRowStyles: { fillColor: [248, 249, 251] },
+    columnStyles: { 6: { cellWidth: 40 } },
+  })
+
+  // Staff balance summary
+  if (staffProfiles.length > 0) {
+    const finalY = (doc as unknown as { lastAutoTable: { finalY: number } }).lastAutoTable.finalY + 10
+    doc.setFontSize(12)
+    doc.setTextColor(10, 17, 40)
+    doc.text('Staff Leave Balance Summary', 14, finalY)
+
+    autoTable(doc, {
+      startY: finalY + 4,
+      head: [['Name', 'Department', 'AL Entitled', 'AL Used', 'AL Remaining', 'ML Entitled', 'ML Used', 'ML Remaining']],
+      body: staffProfiles.map(p => [
+        p.name, p.department,
+        p.al_entitled.toString(), p.al_used.toString(), (p.al_entitled - p.al_used).toString(),
+        p.ml_entitled.toString(), p.ml_used.toString(), (p.ml_entitled - p.ml_used).toString(),
+      ]),
+      styles: { fontSize: 8, cellPadding: 3 },
+      headStyles: { fillColor: [67, 56, 202], textColor: 255, fontStyle: 'bold' },
+      alternateRowStyles: { fillColor: [248, 249, 251] },
+    })
+  }
+
+  doc.save(`Leave_Report_${new Date().toISOString().split('T')[0]}.pdf`)
+}
+
 export default function LeavePage() {
   const { profile, supabase, setProfile } = useProfile()
   const [leaves, setLeaves] = useState<Leave[]>([])
@@ -199,19 +259,30 @@ export default function LeavePage() {
 
   return (
     <>
-      <div className="flex items-center justify-between mb-8">
+      <div className="flex items-center justify-between mb-8 gap-3 flex-wrap">
         <div>
           <h1 className="text-2xl font-bold text-slate-900">Leave Management</h1>
           <p className="text-slate-500 text-sm mt-1">Apply for leave and track balances</p>
         </div>
-        {profile?.role !== 'management' && (
-          <button
-            onClick={() => setShowForm(true)}
-            className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold px-5 py-2.5 rounded-xl transition"
-          >
-            + Apply Leave
-          </button>
-        )}
+        <div className="flex items-center gap-2 flex-wrap">
+          {isHrOrMgmt && (
+            <button
+              onClick={() => exportLeavesPDF(leaves, staffProfiles, 'Leave Report — All Staff')}
+              className="flex items-center gap-2 border border-gray-200 bg-white hover:bg-slate-50 text-slate-700 font-semibold px-4 py-2.5 rounded-xl transition text-sm"
+            >
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
+              Export PDF
+            </button>
+          )}
+          {profile?.role !== 'management' && (
+            <button
+              onClick={() => setShowForm(true)}
+              className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold px-5 py-2.5 rounded-xl transition"
+            >
+              + Apply Leave
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Balance Cards — not shown to management */}
