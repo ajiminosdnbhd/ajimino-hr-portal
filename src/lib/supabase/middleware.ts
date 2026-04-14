@@ -1,6 +1,10 @@
 import { createServerClient } from '@supabase/ssr'
 import { NextResponse, type NextRequest } from 'next/server'
 
+// 1 year in seconds — must match createBrowserClient cookieOptions.maxAge so
+// the middleware never downgrades a persistent cookie back to a session cookie.
+const COOKIE_MAX_AGE = 60 * 60 * 24 * 365
+
 export async function updateSession(request: NextRequest) {
   let supabaseResponse = NextResponse.next({ request })
 
@@ -18,7 +22,12 @@ export async function updateSession(request: NextRequest) {
           )
           supabaseResponse = NextResponse.next({ request })
           cookiesToSet.forEach(({ name, value, options }) =>
-            supabaseResponse.cookies.set(name, value, options)
+            // Always enforce maxAge so the middleware never converts a
+            // persistent cookie back into a session-only cookie.
+            supabaseResponse.cookies.set(name, value, {
+              ...options,
+              maxAge: options?.maxAge ?? COOKIE_MAX_AGE,
+            })
           )
         },
       },
