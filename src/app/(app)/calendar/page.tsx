@@ -659,7 +659,7 @@ export default function PlannerPage() {
               <button onClick={prevMonth} className="p-2 hover:bg-slate-100 rounded-lg transition">
                 <svg className="w-4 h-4 text-slate-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" /></svg>
               </button>
-              <button onClick={() => { setMonth(new Date().getMonth()); setYear(new Date().getFullYear()) }}
+              <button onClick={() => { const t = new Date(); setMonth(t.getMonth()); setYear(t.getFullYear()); setSelectedDate(t.toISOString().split('T')[0]) }}
                 className="px-3 py-1 text-xs font-medium text-indigo-600 hover:bg-indigo-50 rounded-lg transition">Today</button>
               <button onClick={nextMonth} className="p-2 hover:bg-slate-100 rounded-lg transition">
                 <svg className="w-4 h-4 text-slate-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" /></svg>
