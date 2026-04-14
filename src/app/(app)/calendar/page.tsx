@@ -93,8 +93,11 @@ export default function PlannerPage() {
     const lastDay = new Date(year, month + 1, 0).getDate()
     const to      = `${year}-${pad}-${String(lastDay).padStart(2, '0')}`
 
+    // Staff see: all company-wide events + all department events (to know when others are busy)
+    //            + individual events targeted specifically at them (private 1-on-1s stay hidden)
+    // HR/Mgmt see everything
     const evtFilters = isHrOrMgmt ? [] : [
-      { type: 'or' as const, val: `visibility.eq.all,and(visibility.eq.department,target_department.eq.${profile.department}),and(visibility.eq.individual,target_user_ids.cs.{${profile.id}})` }
+      { type: 'or' as const, val: `visibility.eq.all,visibility.eq.department,and(visibility.eq.individual,target_user_ids.cs.{${profile.id}})` }
     ]
 
     const [evtRes, bookRes, leaveRes, profileRes] = await Promise.all([
