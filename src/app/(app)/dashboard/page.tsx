@@ -1,72 +1,25 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import Link from 'next/link'
 import { useProfile } from '@/lib/useProfile'
-import { SELANGOR_HOLIDAYS, isHoliday } from '@/lib/holidays'
-import { DEPARTMENTS, CalendarEvent } from '@/lib/types'
+import { SELANGOR_HOLIDAYS } from '@/lib/holidays'
+import { CalendarEvent } from '@/lib/types'
 import StatsCard from '@/components/StatsCard'
-
-const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']
-const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
-const EVENT_COLORS = [
-  { value: '#4f46e5', label: 'Indigo' },
-  { value: '#059669', label: 'Green' },
-  { value: '#d97706', label: 'Amber' },
-  { value: '#dc2626', label: 'Red' },
-  { value: '#7c3aed', label: 'Purple' },
-  { value: '#0891b2', label: 'Cyan' },
-]
 
 export default function DashboardPage() {
   const { profile, supabase } = useProfile()
   const [stats, setStats] = useState({ staff: 0, pendingLeave: 0, todayBookings: 0, policies: 0 })
-  const [calendarYear, setCalendarYear] = useState(new Date().getFullYear())
-  const [hoveredDay, setHoveredDay] = useState<string | null>(null)
-  const [events, setEvents] = useState<CalendarEvent[]>([])
-  const [selectedDate, setSelectedDate] = useState<string | null>(null)
-  const [showEventForm, setShowEventForm] = useState(false)
-  const [editingEvent, setEditingEvent] = useState<CalendarEvent | null>(null)
-  const [allProfiles, setAllProfiles] = useState<{ id: string; name: string; department: string }[]>([])
-
-  // Form state
-  const [formTitle, setFormTitle] = useState('')
-  const [formDate, setFormDate] = useState('')
-  const [formTime, setFormTime] = useState('')
-  const [formEndTime, setFormEndTime] = useState('')
-  const [formDesc, setFormDesc] = useState('')
-  const [formColor, setFormColor] = useState('#4f46e5')
-  const [formVisibility, setFormVisibility] = useState<'all' | 'department' | 'individual'>('all')
-  const [formDept, setFormDept] = useState('')
-  const [formUserIds, setFormUserIds] = useState<string[]>([])
-  const [formError, setFormError] = useState('')
-  const [saving, setSaving] = useState(false)
+  const [upcomingEvents, setUpcomingEvents] = useState<CalendarEvent[]>([])
 
   const isHrOrMgmt = profile && (profile.role === 'hr' || profile.role === 'management')
-
-  // Can a user edit/delete this event?
-  // HR + Management: always yes
-  // Staff: only if they created it (and the creator is not HR/Management)
-  function canModifyEvent(ev: CalendarEvent): boolean {
-    if (!profile) return false
-    if (isHrOrMgmt) return true
-    // Staff can only modify their own events, not ones created by HR/Management
-    if (ev.created_by_role === 'hr' || ev.created_by_role === 'management') return false
-    return ev.created_by_id === profile.id
-  }
 
   useEffect(() => {
     if (profile) {
       loadStats()
-      if (isHrOrMgmt) {
-        supabase.from('profiles').select('id, name, department').order('name')
-          .then(({ data }) => { if (data) setAllProfiles(data) })
-      }
+      loadUpcomingEvents()
     }
   }, [profile])
-
-  useEffect(() => {
-    if (profile) loadEvents()
-  }, [calendarYear, profile])
 
   async function loadStats() {
     const [staffRes, leaveRes, bookingRes, policyRes] = await Promise.all([
@@ -83,29 +36,23 @@ export default function DashboardPage() {
     })
   }
 
-  async function loadEvents() {
+  async function loadUpcomingEvents() {
     if (!profile) return
+    const today = new Date().toISOString().split('T')[0]
     let query = supabase
       .from('events')
       .select('*')
-      .gte('date', `${calendarYear}-01-01`)
-      .lte('date', `${calendarYear}-12-31`)
+      .gte('date', today)
       .order('date')
+      .limit(5)
 
-    // Staff/HR filter: only see events targeted at them
-    // Management + HR see everything
     if (!isHrOrMgmt) {
       query = query.or(
         `visibility.eq.all,and(visibility.eq.department,target_department.eq.${profile.department}),and(visibility.eq.individual,target_user_ids.cs.{${profile.id}})`
       )
     }
-
     const { data } = await query
-    if (data) setEvents(data as CalendarEvent[])
-  }
-
-  function getEventsForDate(dateStr: string) {
-    return events.filter(e => e.date === dateStr)
+    if (data) setUpcomingEvents(data as CalendarEvent[])
   }
 
   function formatTime(time: string | null) {
@@ -124,170 +71,6 @@ export default function DashboardPage() {
     return `${s} – ${formatTime(end)}`
   }
 
-  async function handleSubmitEvent(e: React.FormEvent) {
-    e.preventDefault()
-    setFormError('')
-    if (!profile) return
-    setSaving(true)
-
-    const payload = {
-      title: formTitle,
-      date: formDate,
-      event_time: formTime || null,
-      event_end_time: formEndTime || null,
-      description: formDesc || null,
-      color: formColor,
-      created_by: profile.name,
-      created_by_id: profile.id,
-      created_by_role: profile.role,
-      visibility: formVisibility,
-      target_department: formVisibility === 'department' ? formDept : null,
-      target_user_ids: formVisibility === 'individual' ? formUserIds : null,
-    }
-
-    let err = null
-    if (editingEvent) {
-      const res = await supabase.from('events').update(payload).eq('id', editingEvent.id)
-      err = res.error
-    } else {
-      const res = await supabase.from('events').insert(payload)
-      err = res.error
-    }
-
-    if (err) {
-      setFormError(err.message)
-    } else {
-      closeForm()
-      loadEvents()
-    }
-    setSaving(false)
-  }
-
-  async function handleDeleteEvent(id: string) {
-    await supabase.from('events').delete().eq('id', id)
-    loadEvents()
-  }
-
-  function openAddEvent(date?: string) {
-    setEditingEvent(null)
-    setFormDate(date || new Date().toISOString().split('T')[0])
-    setFormTime('')
-    setFormEndTime('')
-    setFormTitle('')
-    setFormDesc('')
-    setFormColor('#4f46e5')
-    setFormVisibility('all')
-    setFormDept('')
-    setFormUserIds([])
-    setFormError('')
-    setShowEventForm(true)
-  }
-
-  function openEditEvent(ev: CalendarEvent) {
-    setEditingEvent(ev)
-    setFormTitle(ev.title)
-    setFormDate(ev.date)
-    setFormTime(ev.event_time ? ev.event_time.slice(0, 5) : '')
-    setFormEndTime(ev.event_end_time ? ev.event_end_time.slice(0, 5) : '')
-    setFormDesc(ev.description || '')
-    setFormColor(ev.color)
-    setFormVisibility(ev.visibility || 'all')
-    setFormDept(ev.target_department || '')
-    setFormUserIds(ev.target_user_ids || [])
-    setFormError('')
-    setShowEventForm(true)
-  }
-
-  function closeForm() {
-    setShowEventForm(false)
-    setEditingEvent(null)
-    setFormTitle('')
-    setFormDate('')
-    setFormTime('')
-    setFormEndTime('')
-    setFormDesc('')
-    setFormColor('#4f46e5')
-    setFormVisibility('all')
-    setFormDept('')
-    setFormUserIds([])
-    setFormError('')
-  }
-
-  function toggleUserId(uid: string) {
-    setFormUserIds(prev => prev.includes(uid) ? prev.filter(x => x !== uid) : [...prev, uid])
-  }
-
-  const selectedEvents = selectedDate ? getEventsForDate(selectedDate) : []
-  const selectedHoliday = selectedDate ? isHoliday(selectedDate) : undefined
-
-  function getDaysInMonth(year: number, month: number) {
-    return new Date(year, month + 1, 0).getDate()
-  }
-
-  function getFirstDayOfMonth(year: number, month: number) {
-    return new Date(year, month, 1).getDay()
-  }
-
-  function renderMiniCalendar(monthIndex: number) {
-    const daysInMonth = getDaysInMonth(calendarYear, monthIndex)
-    const firstDay = getFirstDayOfMonth(calendarYear, monthIndex)
-    const today = new Date()
-    const todayStr = today.toISOString().split('T')[0]
-    const cells = []
-
-    for (let i = 0; i < firstDay; i++) {
-      cells.push(<div key={`empty-${i}`} />)
-    }
-
-    for (let day = 1; day <= daysInMonth; day++) {
-      const dateStr = `${calendarYear}-${String(monthIndex + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`
-      const holiday = isHoliday(dateStr)
-      const isToday = dateStr === todayStr
-      const dayOfWeek = new Date(calendarYear, monthIndex, day).getDay()
-      const isWeekend = dayOfWeek === 0 || dayOfWeek === 6
-      const dayEvents = getEventsForDate(dateStr)
-      const isSelected = dateStr === selectedDate
-
-      cells.push(
-        <div
-          key={day}
-          onClick={() => setSelectedDate(dateStr)}
-          className={`relative text-center text-xs py-0.5 rounded cursor-pointer transition-colors ${isSelected ? 'ring-2 ring-indigo-500' : ''} ${
-            isToday ? 'bg-indigo-600 text-white font-bold' :
-            holiday ? 'bg-red-50 text-red-600 font-semibold' :
-            isWeekend ? 'text-slate-400 hover:bg-slate-100' : 'text-slate-700 hover:bg-slate-100'
-          }`}
-          onMouseEnter={() => (holiday || dayEvents.length > 0) && setHoveredDay(dateStr)}
-          onMouseLeave={() => setHoveredDay(null)}
-        >
-          {day}
-          {dayEvents.length > 0 && (
-            <div className="flex justify-center gap-px mt-px">
-              {dayEvents.slice(0, 3).map(ev => (
-                <div key={ev.id} className="w-1 h-1 rounded-full" style={{ backgroundColor: ev.color }} />
-              ))}
-            </div>
-          )}
-          {hoveredDay === dateStr && (holiday || dayEvents.length > 0) && (
-            <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 px-2 py-1 bg-slate-900 text-white text-[10px] rounded whitespace-nowrap z-50">
-              {holiday && <div>{holiday.name}</div>}
-              {dayEvents.map(ev => (
-                <div key={ev.id}>{ev.event_time ? `${formatTimeRange(ev.event_time, ev.event_end_time)} · ` : ''}{ev.title}</div>
-              ))}
-            </div>
-          )}
-        </div>
-      )
-    }
-    return cells
-  }
-
-  function getVisibilityLabel(ev: CalendarEvent) {
-    if (ev.visibility === 'department') return `Dept: ${ev.target_department}`
-    if (ev.visibility === 'individual') return `${ev.target_user_ids?.length ?? 0} person(s)`
-    return 'All Staff'
-  }
-
   return (
     <>
       <div className="flex items-center justify-between mb-8">
@@ -297,14 +80,12 @@ export default function DashboardPage() {
             Welcome back{profile ? `, ${profile.name}` : ''}
           </p>
         </div>
-        {profile && (
-          <button
-            onClick={() => openAddEvent()}
-            className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold px-5 py-2.5 rounded-xl transition"
-          >
-            + Add Event
-          </button>
-        )}
+        <Link
+          href="/calendar"
+          className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold px-5 py-2.5 rounded-xl transition text-sm"
+        >
+          View Calendar
+        </Link>
       </div>
 
       {/* Company stats — HR + Management only */}
@@ -325,246 +106,72 @@ export default function DashboardPage() {
         </div>
       )}
 
-      {/* Personal leave balance — not management */}
-      {profile?.role !== 'management' && (
+      {/* Personal leave balance — all users */}
+      {profile && (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-8">
-          <StatsCard title="AL Remaining" value={profile ? profile.al_entitled - profile.al_used : 0}
-            subtitle={`${profile?.al_used ?? 0} of ${profile?.al_entitled ?? 0} days used`}
+          <StatsCard title="AL Remaining" value={profile.al_entitled - profile.al_used}
+            subtitle={`${profile.al_used} of ${profile.al_entitled} days used`}
             icon={<svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>}
           />
-          <StatsCard title="ML Remaining" value={profile ? profile.ml_entitled - profile.ml_used : 0}
-            subtitle={`${profile?.ml_used ?? 0} of ${profile?.ml_entitled ?? 0} days used`}
+          <StatsCard title="ML Remaining" value={profile.ml_entitled - profile.ml_used}
+            subtitle={`${profile.ml_used} of ${profile.ml_entitled} days used`}
             icon={<svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>}
           />
         </div>
       )}
 
-      {/* Event Form Modal */}
-      {showEventForm && (
-        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 px-4">
-          <div className="bg-white rounded-2xl p-6 w-full max-w-md max-h-[90vh] overflow-y-auto">
-            <div className="flex items-center justify-between mb-5">
-              <h2 className="text-lg font-bold text-slate-900">{editingEvent ? 'Edit Event' : 'Add Event'}</h2>
-              <button onClick={closeForm} className="text-slate-400 hover:text-slate-600">
-                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
-              </button>
-            </div>
-            <form onSubmit={handleSubmitEvent} className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">Title</label>
-                <input type="text" value={formTitle} onChange={e => setFormTitle(e.target.value)} required placeholder="e.g. Team Meeting, Company Trip"
-                  className="w-full px-3 py-2.5 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">Date</label>
-                <input type="date" value={formDate} onChange={e => setFormDate(e.target.value)} required
-                  className="w-full px-3 py-2.5 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" />
-              </div>
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">Start Time <span className="text-slate-400 font-normal">(optional)</span></label>
-                  <input type="time" value={formTime} onChange={e => setFormTime(e.target.value)}
-                    className="w-full px-3 py-2.5 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">End Time <span className="text-slate-400 font-normal">(optional)</span></label>
-                  <input type="time" value={formEndTime} onChange={e => setFormEndTime(e.target.value)}
-                    className="w-full px-3 py-2.5 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" />
-                </div>
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">Description (optional)</label>
-                <textarea value={formDesc} onChange={e => setFormDesc(e.target.value)} rows={2} placeholder="Additional details..."
-                  className="w-full px-3 py-2.5 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 resize-none" />
-              </div>
-
-              {/* Visibility — HR/Management can target; staff always posts to All */}
-              {isHrOrMgmt ? (
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">Visible To</label>
-                  <div className="flex gap-2">
-                    {(['all', 'department', 'individual'] as const).map(v => (
-                      <button key={v} type="button" onClick={() => { setFormVisibility(v); setFormDept(''); setFormUserIds([]) }}
-                        className={`flex-1 py-2 rounded-xl text-xs font-semibold border transition ${formVisibility === v ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-slate-600 border-gray-200 hover:border-indigo-300'}`}>
-                        {v === 'all' ? 'All Staff' : v === 'department' ? 'Department' : 'Individual'}
-                      </button>
-                    ))}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {/* Upcoming Events */}
+        <div className="bg-white border border-gray-100 rounded-2xl p-6">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-lg font-bold text-slate-900">Upcoming Events</h2>
+            <Link href="/calendar" className="text-sm text-indigo-600 hover:text-indigo-700 font-medium">View all →</Link>
+          </div>
+          {upcomingEvents.length > 0 ? (
+            <div className="space-y-3">
+              {upcomingEvents.map(ev => (
+                <div key={ev.id} className="flex items-start gap-3 p-3 bg-slate-50 rounded-xl">
+                  <div className="w-2.5 h-2.5 rounded-full flex-shrink-0 mt-1" style={{ backgroundColor: ev.color }} />
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-semibold text-slate-900">{ev.title}</p>
+                    <p className="text-xs text-slate-500 mt-0.5">
+                      {new Date(ev.date + 'T00:00:00').toLocaleDateString('en-MY', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' })}
+                      {ev.event_time && ` · ${formatTimeRange(ev.event_time, ev.event_end_time)}`}
+                    </p>
+                    {ev.description && <p className="text-xs text-slate-400 mt-0.5 truncate">{ev.description}</p>}
                   </div>
                 </div>
-              ) : (
-                <div className="px-3 py-2 bg-slate-50 rounded-xl text-xs text-slate-500">
-                  Visible to: <span className="font-semibold text-slate-700">All Staff</span>
-                </div>
-              )}
+              ))}
+            </div>
+          ) : (
+            <div className="text-center py-8">
+              <p className="text-sm text-slate-400">No upcoming events</p>
+              <Link href="/calendar" className="text-xs text-indigo-600 hover:text-indigo-700 font-medium mt-1 inline-block">
+                Add one in Calendar
+              </Link>
+            </div>
+          )}
+        </div>
 
-              {formVisibility === 'department' && (
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">Select Department</label>
-                  <select value={formDept} onChange={e => setFormDept(e.target.value)} required
-                    className="w-full px-3 py-2.5 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
-                    <option value="">Choose department...</option>
-                    {DEPARTMENTS.map(d => <option key={d} value={d}>{d}</option>)}
-                  </select>
-                </div>
-              )}
-
-              {formVisibility === 'individual' && (
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">Select Staff</label>
-                  <div className="border border-gray-200 rounded-xl max-h-40 overflow-y-auto divide-y divide-gray-50">
-                    {allProfiles.map(p => (
-                      <label key={p.id} className="flex items-center gap-3 px-3 py-2 hover:bg-slate-50 cursor-pointer">
-                        <input type="checkbox" checked={formUserIds.includes(p.id)} onChange={() => toggleUserId(p.id)}
-                          className="rounded accent-indigo-600" />
-                        <div>
-                          <p className="text-sm font-medium text-slate-800">{p.name}</p>
-                          <p className="text-xs text-slate-400">{p.department}</p>
-                        </div>
-                      </label>
-                    ))}
+        {/* Upcoming Public Holidays */}
+        <div className="bg-white border border-gray-100 rounded-2xl p-6">
+          <h2 className="text-lg font-bold text-slate-900 mb-4">Upcoming Public Holidays</h2>
+          <div className="space-y-3">
+            {SELANGOR_HOLIDAYS
+              .filter(h => h.date >= new Date().toISOString().split('T')[0])
+              .slice(0, 6)
+              .map(h => (
+                <div key={h.date + h.name} className="flex items-center gap-3 px-4 py-3 bg-slate-50 rounded-xl">
+                  <div className="w-10 h-10 rounded-lg bg-red-50 flex items-center justify-center flex-shrink-0">
+                    <span className="text-red-600 text-xs font-bold">{new Date(h.date + 'T00:00:00').getDate()}</span>
                   </div>
-                  {formUserIds.length === 0 && <p className="text-xs text-amber-600 mt-1">Select at least one person</p>}
+                  <div>
+                    <p className="text-sm font-medium text-slate-900">{h.name}</p>
+                    <p className="text-xs text-slate-500">{new Date(h.date + 'T00:00:00').toLocaleDateString('en-MY', { weekday: 'long', month: 'short', year: 'numeric' })}</p>
+                  </div>
                 </div>
-              )}
-
-              <div>
-                <label className="block text-sm font-medium text-slate-700 mb-2">Color</label>
-                <div className="flex gap-2">
-                  {EVENT_COLORS.map(c => (
-                    <button key={c.value} type="button" onClick={() => setFormColor(c.value)}
-                      className={`w-8 h-8 rounded-full transition ${formColor === c.value ? 'ring-2 ring-offset-2 ring-slate-400' : ''}`}
-                      style={{ backgroundColor: c.value }} title={c.label} />
-                  ))}
-                </div>
-              </div>
-
-              {formError && <p className="text-sm text-red-600 bg-red-50 px-3 py-2 rounded-xl">{formError}</p>}
-
-              <button type="submit" disabled={saving || (formVisibility === 'individual' && formUserIds.length === 0)}
-                className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2.5 rounded-xl transition disabled:opacity-50">
-                {saving ? 'Saving...' : editingEvent ? 'Update Event' : 'Add Event'}
-              </button>
-            </form>
+              ))}
           </div>
-        </div>
-      )}
-
-      <div className="flex flex-col lg:flex-row gap-6">
-        {/* Year Calendar */}
-        <div className="flex-1 bg-white border border-gray-100 rounded-2xl p-6">
-          <div className="flex items-center justify-between mb-6">
-            <h2 className="text-lg font-bold text-slate-900">{calendarYear} Calendar</h2>
-            <div className="flex items-center gap-2">
-              <button onClick={() => setCalendarYear(y => y - 1)} className="p-2 hover:bg-slate-100 rounded-lg transition">
-                <svg className="w-4 h-4 text-slate-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" /></svg>
-              </button>
-              <button onClick={() => setCalendarYear(new Date().getFullYear())} className="px-3 py-1 text-xs font-medium text-indigo-600 hover:bg-indigo-50 rounded-lg transition">Today</button>
-              <button onClick={() => setCalendarYear(y => y + 1)} className="p-2 hover:bg-slate-100 rounded-lg transition">
-                <svg className="w-4 h-4 text-slate-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" /></svg>
-              </button>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-4 mb-4 text-xs flex-wrap">
-            <div className="flex items-center gap-1.5"><div className="w-3 h-3 rounded bg-indigo-600" /><span className="text-slate-500">Today</span></div>
-            <div className="flex items-center gap-1.5"><div className="w-3 h-3 rounded bg-red-50 border border-red-200" /><span className="text-slate-500">Public Holiday</span></div>
-            <div className="flex items-center gap-1.5"><div className="w-2 h-2 rounded-full bg-indigo-500" /><span className="text-slate-500">Event</span></div>
-          </div>
-
-          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
-            {MONTHS.map((month, idx) => (
-              <div key={month}>
-                <h3 className="text-sm font-semibold text-slate-700 mb-2">{month}</h3>
-                <div className="grid grid-cols-7 gap-0.5">
-                  {DAYS.map(d => (
-                    <div key={d} className="text-center text-[10px] text-slate-400 font-medium pb-1">{d[0]}</div>
-                  ))}
-                  {renderMiniCalendar(idx)}
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        {/* Selected Day Panel */}
-        {selectedDate && (
-          <div className="w-full lg:w-72 flex-shrink-0">
-            <div className="bg-white border border-gray-100 rounded-2xl p-5 sticky top-8">
-              <div className="flex items-center justify-between mb-3">
-                <h3 className="text-sm font-bold text-slate-900">
-                  {new Date(selectedDate + 'T00:00:00').toLocaleDateString('en-MY', { weekday: 'short', day: 'numeric', month: 'long', year: 'numeric' })}
-                </h3>
-                <button onClick={() => setSelectedDate(null)} className="text-slate-400 hover:text-slate-600">
-                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
-                </button>
-              </div>
-
-              {selectedHoliday && (
-                <div className="flex items-center gap-2 px-3 py-2 bg-red-50 rounded-xl mb-3">
-                  <div className="w-2 h-2 rounded-full bg-red-500 flex-shrink-0" />
-                  <span className="text-xs font-medium text-red-700">{selectedHoliday.name}</span>
-                </div>
-              )}
-
-              {selectedEvents.length > 0 ? (
-                <div className="space-y-2">
-                  {selectedEvents.map(ev => (
-                    <div key={ev.id} className="p-3 bg-slate-50 rounded-xl">
-                      <div className="flex items-start justify-between">
-                        <div className="flex items-center gap-2 mb-1 flex-1 min-w-0">
-                          <div className="w-2 h-2 rounded-full flex-shrink-0 mt-0.5" style={{ backgroundColor: ev.color }} />
-                          <span className="text-xs font-semibold text-slate-900 truncate">{ev.title}</span>
-                        </div>
-                        {canModifyEvent(ev) && (
-                          <div className="flex gap-1 flex-shrink-0 ml-1">
-                            <button onClick={() => openEditEvent(ev)} className="p-1 hover:bg-indigo-50 rounded transition text-slate-400 hover:text-indigo-600" title="Edit">
-                              <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>
-                            </button>
-                            <button onClick={() => handleDeleteEvent(ev.id)} className="p-1 hover:bg-red-50 rounded transition text-slate-400 hover:text-red-500" title="Delete">
-                              <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
-                            </button>
-                          </div>
-                        )}
-                      </div>
-                      {ev.event_time && <p className="text-xs text-indigo-600 ml-4 font-medium">{formatTimeRange(ev.event_time, ev.event_end_time)}</p>}
-                      {ev.description && <p className="text-xs text-slate-500 ml-4 mt-0.5">{ev.description}</p>}
-                      <p className="text-[10px] text-slate-400 ml-4 mt-1">by {ev.created_by} · {getVisibilityLabel(ev)}</p>
-                    </div>
-                  ))}
-                </div>
-              ) : !selectedHoliday ? (
-                <p className="text-sm text-slate-400 py-4 text-center">No events</p>
-              ) : null}
-
-              {profile && (
-                <button onClick={() => openAddEvent(selectedDate)}
-                  className="w-full mt-3 px-3 py-2 bg-indigo-50 text-indigo-600 text-xs font-semibold rounded-xl hover:bg-indigo-100 transition">
-                  + Add event on this day
-                </button>
-              )}
-            </div>
-          </div>
-        )}
-      </div>
-
-      {/* Upcoming Holidays */}
-      <div className="bg-white border border-gray-100 rounded-2xl p-6 mt-4">
-        <h2 className="text-lg font-bold text-slate-900 mb-4">Upcoming Public Holidays</h2>
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-          {SELANGOR_HOLIDAYS
-            .filter(h => h.date >= new Date().toISOString().split('T')[0])
-            .slice(0, 6)
-            .map(h => (
-              <div key={h.date + h.name} className="flex items-center gap-3 px-4 py-3 bg-slate-50 rounded-xl">
-                <div className="w-10 h-10 rounded-lg bg-red-50 flex items-center justify-center flex-shrink-0">
-                  <span className="text-red-600 text-xs font-bold">{new Date(h.date + 'T00:00:00').getDate()}</span>
-                </div>
-                <div>
-                  <p className="text-sm font-medium text-slate-900">{h.name}</p>
-                  <p className="text-xs text-slate-500">{new Date(h.date + 'T00:00:00').toLocaleDateString('en-MY', { weekday: 'long', month: 'short', year: 'numeric' })}</p>
-                </div>
-              </div>
-            ))}
         </div>
       </div>
     </>

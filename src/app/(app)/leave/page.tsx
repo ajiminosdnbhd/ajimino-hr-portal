@@ -1,13 +1,9 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import Link from 'next/link'
 import { useProfile } from '@/lib/useProfile'
-import { Leave, Profile, CalendarEvent } from '@/lib/types'
-import { isHoliday } from '@/lib/holidays'
-
-const DAYS_SHORT = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
-const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June',
-  'July', 'August', 'September', 'October', 'November', 'December']
+import { Leave, Profile } from '@/lib/types'
 
 async function exportLeavesPDF(leaves: Leave[], staffProfiles: Profile[], title: string) {
   const { default: jsPDF } = await import('jspdf')
@@ -60,14 +56,9 @@ async function exportLeavesPDF(leaves: Leave[], staffProfiles: Profile[], title:
 export default function LeavePage() {
   const { profile, supabase, setProfile } = useProfile()
   const [leaves, setLeaves] = useState<Leave[]>([])
-  const [calendarLeaves, setCalendarLeaves] = useState<Leave[]>([])
-  const [calendarEvents, setCalendarEvents] = useState<CalendarEvent[]>([])
   const [tab, setTab] = useState<'my' | 'approvals' | 'balances'>('my')
   const [staffProfiles, setStaffProfiles] = useState<Profile[]>([])
   const [showForm, setShowForm] = useState(false)
-  const [calMonth, setCalMonth] = useState(new Date().getMonth())
-  const [calYear, setCalYear] = useState(new Date().getFullYear())
-  const [selectedDate, setSelectedDate] = useState<string | null>(null)
 
   // Form state
   const [formType, setFormType] = useState<'Annual Leave' | 'Medical Leave'>('Annual Leave')
@@ -87,7 +78,6 @@ export default function LeavePage() {
   useEffect(() => {
     if (profile) {
       loadLeaves()
-      loadCalendarData()
       if (isHrOrMgmt) {
         supabase.from('profiles').select('*').neq('role', 'management').order('name')
           .then(({ data }) => { if (data) setStaffProfiles(data as Profile[]) })
@@ -95,58 +85,12 @@ export default function LeavePage() {
     }
   }, [profile, tab])
 
-  useEffect(() => {
-    if (profile) loadCalendarData()
-  }, [calYear, calMonth, profile])
-
   async function loadLeaves() {
     if (!profile) return
     let query = supabase.from('leaves').select('*').order('created_at', { ascending: false })
     if (tab === 'my') query = query.eq('user_id', profile.id)
     const { data } = await query
     if (data) setLeaves(data)
-  }
-
-  async function loadCalendarData() {
-    if (!profile) return
-    const monthStr = `${calYear}-${String(calMonth + 1).padStart(2, '0')}`
-
-    // Load leaves for calendar — staff sees only own, HR/Mgmt see all
-    let leaveQuery = supabase.from('leaves').select('*')
-      .gte('start_date', `${monthStr}-01`)
-      .lte('start_date', `${monthStr}-31`)
-    if (!isHrOrMgmt) leaveQuery = leaveQuery.eq('user_id', profile.id)
-    const { data: leaveData } = await leaveQuery
-    if (leaveData) setCalendarLeaves(leaveData)
-
-    // Load events with visibility filter
-    let evtQuery = supabase.from('events').select('*')
-      .gte('date', `${monthStr}-01`).lte('date', `${monthStr}-31`).order('date')
-    if (!isHrOrMgmt) {
-      evtQuery = evtQuery.or(
-        `visibility.eq.all,and(visibility.eq.department,target_department.eq.${profile.department}),and(visibility.eq.individual,target_user_ids.cs.{${profile.id}})`
-      )
-    }
-    const { data: evtData } = await evtQuery
-    if (evtData) setCalendarEvents(evtData as CalendarEvent[])
-  }
-
-  // Returns leave entries that cover a given date
-  function getLeavesForDate(dateStr: string): Leave[] {
-    return calendarLeaves.filter(l => l.start_date <= dateStr && l.end_date >= dateStr)
-  }
-
-  function getEventsForDate(dateStr: string): CalendarEvent[] {
-    return calendarEvents.filter(e => e.date === dateStr)
-  }
-
-  function prevMonth() {
-    if (calMonth === 0) { setCalYear(y => y - 1); setCalMonth(11) }
-    else setCalMonth(m => m - 1)
-  }
-  function nextMonth() {
-    if (calMonth === 11) { setCalYear(y => y + 1); setCalMonth(0) }
-    else setCalMonth(m => m + 1)
   }
 
   function calculateDays(start: string, end: string): number {
@@ -210,7 +154,7 @@ export default function LeavePage() {
       setShowForm(false); setFormType('Annual Leave'); setFormStart(''); setFormEnd(''); setFormReason(''); setFormFile(null)
       const { data: updatedProf } = await supabase.from('profiles').select('*').eq('id', profile.id).single()
       if (updatedProf) setProfile(updatedProf)
-      loadLeaves(); loadCalendarData()
+      loadLeaves()
     }
     setSaving(false)
   }
@@ -226,21 +170,12 @@ export default function LeavePage() {
       const { data: tp } = await supabase.from('profiles').select('*').eq('id', leave.user_id).single()
       if (tp) await supabase.from('profiles').update({ [field]: (leave.type === 'Annual Leave' ? tp.al_used : tp.ml_used) + leave.days }).eq('id', leave.user_id)
     }
-    loadLeaves(); loadCalendarData()
+    loadLeaves()
   }
 
   const alBalance = profile ? profile.al_entitled - profile.al_used : 0
   const mlBalance = profile ? profile.ml_entitled - profile.ml_used : 0
   const filteredLeaves = tab === 'approvals' ? leaves.filter(l => l.status === 'pending' && canApprove(l)) : leaves
-
-  // Calendar rendering
-  const daysInMonth = new Date(calYear, calMonth + 1, 0).getDate()
-  const firstDay = new Date(calYear, calMonth, 1).getDay()
-  const todayStr = new Date().toISOString().split('T')[0]
-
-  const selectedDayLeaves = selectedDate ? getLeavesForDate(selectedDate) : []
-  const selectedDayEvents = selectedDate ? getEventsForDate(selectedDate) : []
-  const selectedHoliday = selectedDate ? isHoliday(selectedDate) : undefined
 
   return (
     <>
@@ -251,6 +186,11 @@ export default function LeavePage() {
           <p className="text-slate-500 text-sm mt-1">Apply for leave and track balances</p>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
+          <Link href="/calendar"
+            className="flex items-center gap-2 border border-gray-200 bg-white hover:bg-slate-50 text-slate-700 font-semibold px-4 py-2.5 rounded-xl transition text-sm">
+            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
+            View Calendar
+          </Link>
           {isHrOrMgmt && (
             <button onClick={() => exportLeavesPDF(leaves, staffProfiles, 'Leave Report — All Staff')}
               className="flex items-center gap-2 border border-gray-200 bg-white hover:bg-slate-50 text-slate-700 font-semibold px-4 py-2.5 rounded-xl transition text-sm">
@@ -294,150 +234,6 @@ export default function LeavePage() {
           </div>
         </div>
       )}
-
-      {/* ── Integrated Calendar ── */}
-      <div className="bg-white border border-gray-100 rounded-2xl p-5 mb-6">
-        {/* Calendar header */}
-        <div className="flex items-center justify-between mb-4">
-          <h2 className="text-base font-bold text-slate-900">{MONTHS[calMonth]} {calYear}</h2>
-          <div className="flex items-center gap-1">
-            <button onClick={prevMonth} className="p-1.5 hover:bg-slate-100 rounded-lg transition">
-              <svg className="w-4 h-4 text-slate-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" /></svg>
-            </button>
-            <button onClick={() => { setCalMonth(new Date().getMonth()); setCalYear(new Date().getFullYear()) }}
-              className="px-2 py-1 text-xs font-medium text-indigo-600 hover:bg-indigo-50 rounded-lg transition">Today</button>
-            <button onClick={nextMonth} className="p-1.5 hover:bg-slate-100 rounded-lg transition">
-              <svg className="w-4 h-4 text-slate-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" /></svg>
-            </button>
-          </div>
-        </div>
-
-        {/* Legend */}
-        <div className="flex flex-wrap gap-3 mb-3 text-xs">
-          <div className="flex items-center gap-1.5"><div className="w-3 h-3 rounded bg-red-100 border border-red-200" /><span className="text-slate-500">Holiday</span></div>
-          <div className="flex items-center gap-1.5"><div className="w-3 h-3 rounded-full bg-indigo-500" /><span className="text-slate-500">Event</span></div>
-          <div className="flex items-center gap-1.5"><div className="w-3 h-3 rounded bg-emerald-100" /><span className="text-slate-500">Approved Leave</span></div>
-          <div className="flex items-center gap-1.5"><div className="w-3 h-3 rounded bg-amber-100" /><span className="text-slate-500">Pending Leave</span></div>
-        </div>
-
-        {/* Day headers */}
-        <div className="grid grid-cols-7 mb-1">
-          {DAYS_SHORT.map(d => (
-            <div key={d} className="text-center text-[11px] font-semibold text-slate-400 py-1">{d[0]}</div>
-          ))}
-        </div>
-
-        {/* Calendar grid */}
-        <div className="grid grid-cols-7 gap-px bg-slate-100 rounded-xl overflow-hidden border border-slate-100">
-          {Array.from({ length: firstDay }).map((_, i) => (
-            <div key={`e-${i}`} className="bg-white min-h-[52px]" />
-          ))}
-          {Array.from({ length: daysInMonth }).map((_, i) => {
-            const day = i + 1
-            const dateStr = `${calYear}-${String(calMonth + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`
-            const holiday = isHoliday(dateStr)
-            const isToday = dateStr === todayStr
-            const dayLeaves = getLeavesForDate(dateStr)
-            const dayEvents = getEventsForDate(dateStr)
-            const isSelected = dateStr === selectedDate
-            const isWeekend = new Date(calYear, calMonth, day).getDay() === 0 || new Date(calYear, calMonth, day).getDay() === 6
-
-            const hasApproved = dayLeaves.some(l => l.status === 'approved')
-            const hasPending = dayLeaves.some(l => l.status === 'pending')
-
-            return (
-              <div
-                key={day}
-                onClick={() => setSelectedDate(selectedDate === dateStr ? null : dateStr)}
-                className={`bg-white min-h-[52px] p-1 cursor-pointer transition-colors relative
-                  ${holiday ? 'bg-red-50' : ''}
-                  ${isSelected ? 'ring-2 ring-inset ring-indigo-400' : ''}
-                  ${hasApproved && !holiday ? 'bg-emerald-50' : ''}
-                  ${hasPending && !hasApproved && !holiday ? 'bg-amber-50' : ''}
-                  hover:brightness-95
-                `}
-              >
-                <div className={`text-xs font-semibold w-6 h-6 flex items-center justify-center rounded-full mx-auto
-                  ${isToday ? 'bg-indigo-600 text-white' : holiday ? 'text-red-600' : isWeekend ? 'text-slate-400' : 'text-slate-700'}
-                `}>
-                  {day}
-                </div>
-                {/* Event dots */}
-                {dayEvents.length > 0 && (
-                  <div className="flex justify-center gap-0.5 mt-0.5">
-                    {dayEvents.slice(0, 3).map(ev => (
-                      <div key={ev.id} className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: ev.color }} />
-                    ))}
-                  </div>
-                )}
-                {/* Leave indicator */}
-                {dayLeaves.length > 0 && (
-                  <div className="mt-0.5 px-0.5">
-                    {dayLeaves.slice(0, 2).map(l => (
-                      <div key={l.id} className={`text-[9px] font-medium truncate rounded px-0.5 leading-tight ${
-                        l.status === 'approved' ? 'bg-emerald-200 text-emerald-800' :
-                        l.status === 'rejected' ? 'bg-red-100 text-red-700' : 'bg-amber-100 text-amber-800'
-                      }`}>
-                        {isHrOrMgmt ? l.user_name.split(' ')[0] : l.type === 'Annual Leave' ? 'AL' : 'ML'}
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            )
-          })}
-        </div>
-
-        {/* Selected day detail panel */}
-        {selectedDate && (
-          <div className="mt-4 p-4 bg-slate-50 rounded-xl">
-            <div className="flex items-center justify-between mb-3">
-              <h3 className="text-sm font-bold text-slate-900">
-                {new Date(selectedDate + 'T00:00:00').toLocaleDateString('en-MY', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}
-              </h3>
-              <button onClick={() => setSelectedDate(null)} className="text-slate-400 hover:text-slate-600">
-                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
-              </button>
-            </div>
-            {selectedHoliday && (
-              <div className="flex items-center gap-2 px-3 py-2 bg-red-50 border border-red-100 rounded-xl mb-2">
-                <div className="w-2 h-2 rounded-full bg-red-500 flex-shrink-0" />
-                <span className="text-xs font-semibold text-red-700">{selectedHoliday.name} — Public Holiday</span>
-              </div>
-            )}
-            {selectedDayEvents.map(ev => (
-              <div key={ev.id} className="flex items-center gap-2 px-3 py-2 bg-white border border-gray-100 rounded-xl mb-2">
-                <div className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: ev.color }} />
-                <div className="flex-1 min-w-0">
-                  <p className="text-xs font-semibold text-slate-900 truncate">{ev.title}</p>
-                  {ev.event_time && (
-                    <p className="text-[10px] text-indigo-600">{ev.event_time.slice(0, 5)}{ev.event_end_time ? ` – ${ev.event_end_time.slice(0, 5)}` : ''}</p>
-                  )}
-                </div>
-              </div>
-            ))}
-            {selectedDayLeaves.map(l => (
-              <div key={l.id} className={`flex items-center gap-2 px-3 py-2 rounded-xl mb-2 border ${
-                l.status === 'approved' ? 'bg-emerald-50 border-emerald-100' :
-                l.status === 'rejected' ? 'bg-red-50 border-red-100' : 'bg-amber-50 border-amber-100'
-              }`}>
-                <div className={`w-2 h-2 rounded-full flex-shrink-0 ${
-                  l.status === 'approved' ? 'bg-emerald-500' : l.status === 'rejected' ? 'bg-red-400' : 'bg-amber-400'
-                }`} />
-                <div className="flex-1 min-w-0">
-                  <p className="text-xs font-semibold text-slate-900">
-                    {isHrOrMgmt ? `${l.user_name} · ` : ''}{l.type === 'Annual Leave' ? 'Annual Leave' : 'Medical Leave'}
-                  </p>
-                  <p className="text-[10px] text-slate-500 capitalize">{l.status} · {l.days} day(s)</p>
-                </div>
-              </div>
-            ))}
-            {!selectedHoliday && selectedDayEvents.length === 0 && selectedDayLeaves.length === 0 && (
-              <p className="text-sm text-slate-400 text-center py-2">No events or leaves on this day</p>
-            )}
-          </div>
-        )}
-      </div>
 
       {/* Tabs */}
       <div className="flex gap-1 mb-6 bg-slate-100 rounded-xl p-1 w-fit">
