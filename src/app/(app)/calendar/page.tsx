@@ -289,6 +289,30 @@ export default function PlannerPage() {
     loadMonthData()
   }
 
+  // ── Leave cancellation approval ──────────────────────────────────────────
+  async function handleCancellationApproval(leave: Leave, action: 'approve' | 'reject') {
+    if (!profile) return
+    if (action === 'approve') {
+      await supabase.from('leaves').update({ status: 'cancelled' }).eq('id', leave.id)
+      // Decrement balance only if leave was previously approved
+      if (leave.approved_by) {
+        const field = leave.type === 'Annual Leave' ? 'al_used' : 'ml_used'
+        const { data: tpData } = await adminRead<Profile>('profiles', {
+          filters: [{ type: 'eq', col: 'id', val: leave.user_id }],
+        })
+        const tp = tpData[0]
+        if (tp) {
+          const current = leave.type === 'Annual Leave' ? tp.al_used : tp.ml_used
+          await supabase.from('profiles').update({ [field]: Math.max(0, current - leave.days) }).eq('id', leave.user_id)
+        }
+      }
+    } else {
+      const restored = leave.approved_by ? 'approved' : 'pending'
+      await supabase.from('leaves').update({ status: restored, cancellation_reason: null }).eq('id', leave.id)
+    }
+    loadMonthData()
+  }
+
   // ── PDF Export (HR & Management only) ───────────────────────────────────
   async function exportPDF() {
     setExporting(true)
@@ -573,7 +597,10 @@ export default function PlannerPage() {
   const firstDay = new Date(year, month, 1).getDay()
 
   const selEvents = selectedDate ? getForDate(events, selectedDate, 'date') : []
-  const selLeaves = selectedDate ? getForDate(leaves, selectedDate, 'range') : []
+  // Show all active leaves in detail panel (exclude cancelled/rejected)
+  const selLeaves = selectedDate
+    ? getForDate(leaves, selectedDate, 'range').filter(l => l.status !== 'cancelled' && l.status !== 'rejected')
+    : []
   const selBookings = selectedDate ? getForDate(bookings, selectedDate, 'date') : []
   const selHoliday = selectedDate ? isHoliday(selectedDate) : undefined
 
@@ -646,6 +673,7 @@ export default function PlannerPage() {
             <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full bg-indigo-500 inline-block" />Event</span>
             <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded bg-emerald-100 inline-block" />Approved Leave</span>
             <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded bg-amber-100 inline-block" />Pending Leave</span>
+            <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded bg-orange-100 inline-block" />Cancel Requested</span>
             <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded bg-blue-100 inline-block" />Room Booking</span>
           </div>
 
@@ -669,10 +697,12 @@ export default function PlannerPage() {
               const isSelected = dateStr === selectedDate
               const isWeekend = new Date(year, month, day).getDay() === 0 || new Date(year, month, day).getDay() === 6
               const dayEvents = getForDate(events, dateStr, 'date')
-              const dayLeaves = getForDate(leaves, dateStr, 'range')
+              const allDayLeaves = getForDate(leaves, dateStr, 'range')
+              // Only show active leaves on calendar (not cancelled/rejected)
+              const dayLeaves = allDayLeaves.filter(l => l.status !== 'cancelled' && l.status !== 'rejected')
               const dayBookings = getForDate(bookings, dateStr, 'date')
               const hasApproved = dayLeaves.some(l => l.status === 'approved')
-              const hasPending = dayLeaves.some(l => l.status === 'pending')
+              const hasPending = dayLeaves.some(l => l.status === 'pending' || l.status === 'cancellation_requested')
               const hasBooking = dayBookings.length > 0
 
               return (
@@ -723,17 +753,19 @@ export default function PlannerPage() {
                   {dayLeaves.slice(0, 2).map(l => (
                     <div key={l.id} className={`mb-0.5 rounded overflow-hidden border-l-[3px] ${
                       l.status === 'approved' ? 'border-emerald-500 bg-emerald-50' :
-                      l.status === 'rejected' ? 'border-red-400 bg-red-50' : 'border-amber-400 bg-amber-50'
+                      l.status === 'cancellation_requested' ? 'border-orange-400 bg-orange-50' :
+                      'border-amber-400 bg-amber-50'
                     }`}>
                       <div className="px-1 py-0.5">
                         <div className={`text-[9px] font-bold leading-tight truncate ${
                           l.status === 'approved' ? 'text-emerald-700' :
-                          l.status === 'rejected' ? 'text-red-600' : 'text-amber-700'
+                          l.status === 'cancellation_requested' ? 'text-orange-600' :
+                          'text-amber-700'
                         }`}>
                           {isHrOrMgmt ? l.user_name.split(' ')[0] : (l.type === 'Annual Leave' ? 'Annual Leave' : 'Medical Leave')}
                         </div>
                         <div className="text-[8px] text-slate-400 leading-tight truncate">
-                          {l.type === 'Annual Leave' ? 'AL' : 'ML'} · {l.status}
+                          {l.type === 'Annual Leave' ? 'AL' : 'ML'} · {l.status === 'cancellation_requested' ? 'cancel req.' : l.status}
                         </div>
                       </div>
                     </div>
@@ -856,7 +888,8 @@ export default function PlannerPage() {
                     {selLeaves.map(l => (
                       <div key={l.id} className={`p-3 rounded-xl border ${
                         l.status === 'approved' ? 'bg-emerald-50 border-emerald-100' :
-                        l.status === 'rejected' ? 'bg-red-50 border-red-100' : 'bg-amber-50 border-amber-100'
+                        l.status === 'cancellation_requested' ? 'bg-orange-50 border-orange-100' :
+                        'bg-amber-50 border-amber-100'
                       }`}>
                         <div className="flex items-center justify-between mb-1">
                           <p className="text-xs font-semibold text-slate-900">
@@ -864,8 +897,11 @@ export default function PlannerPage() {
                           </p>
                           <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
                             l.status === 'approved' ? 'bg-emerald-200 text-emerald-800' :
-                            l.status === 'rejected' ? 'bg-red-200 text-red-800' : 'bg-amber-200 text-amber-800'
-                          }`}>{l.status}</span>
+                            l.status === 'cancellation_requested' ? 'bg-orange-200 text-orange-800' :
+                            'bg-amber-200 text-amber-800'
+                          }`}>
+                            {l.status === 'cancellation_requested' ? 'Cancel Requested' : l.status}
+                          </span>
                         </div>
                         {isHrOrMgmt && <p className="text-[10px] text-slate-500">{l.type} · {l.department}</p>}
                         <p className="text-[10px] text-slate-500">
@@ -873,6 +909,10 @@ export default function PlannerPage() {
                           {new Date(l.end_date + 'T00:00:00').toLocaleDateString('en-MY', { day: 'numeric', month: 'short' })} · {l.days} day(s)
                         </p>
                         {l.reason && <p className="text-[10px] text-slate-400 mt-0.5 truncate">{l.reason}</p>}
+                        {l.cancellation_reason && (
+                          <p className="text-[10px] text-orange-500 mt-0.5 truncate">Cancel reason: {l.cancellation_reason}</p>
+                        )}
+                        {/* Approve/reject leave application */}
                         {isHrOrMgmt && l.status === 'pending' && (
                           <div className="flex gap-2 mt-2">
                             <button onClick={() => handleLeaveApproval(l, 'approved')}
@@ -882,6 +922,19 @@ export default function PlannerPage() {
                             <button onClick={() => handleLeaveApproval(l, 'rejected')}
                               className="flex-1 py-1 bg-red-100 text-red-600 text-[10px] font-bold rounded-lg hover:bg-red-200 transition">
                               Reject
+                            </button>
+                          </div>
+                        )}
+                        {/* Approve/reject cancellation request */}
+                        {isHrOrMgmt && l.status === 'cancellation_requested' && (
+                          <div className="flex gap-2 mt-2">
+                            <button onClick={() => handleCancellationApproval(l, 'approve')}
+                              className="flex-1 py-1 bg-orange-100 text-orange-700 text-[10px] font-bold rounded-lg hover:bg-orange-200 transition">
+                              Approve Cancel
+                            </button>
+                            <button onClick={() => handleCancellationApproval(l, 'reject')}
+                              className="flex-1 py-1 bg-slate-100 text-slate-600 text-[10px] font-bold rounded-lg hover:bg-slate-200 transition">
+                              Keep Leave
                             </button>
                           </div>
                         )}

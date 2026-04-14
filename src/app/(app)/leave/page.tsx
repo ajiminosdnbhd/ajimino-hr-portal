@@ -55,6 +55,24 @@ async function exportLeavesPDF(leaves: Leave[], staffProfiles: Profile[], title:
   doc.save(`Leave_Report_${new Date().toISOString().split('T')[0]}.pdf`)
 }
 
+function statusBadge(status: Leave['status']) {
+  switch (status) {
+    case 'approved':               return 'bg-green-50 text-green-600'
+    case 'rejected':               return 'bg-red-50 text-red-600'
+    case 'cancelled':              return 'bg-slate-100 text-slate-500'
+    case 'cancellation_requested': return 'bg-orange-50 text-orange-600'
+    default:                       return 'bg-amber-50 text-amber-600' // pending
+  }
+}
+
+function statusLabel(status: Leave['status']) {
+  switch (status) {
+    case 'cancellation_requested': return 'Cancel Requested'
+    case 'cancelled':              return 'Cancelled'
+    default: return status.charAt(0).toUpperCase() + status.slice(1)
+  }
+}
+
 export default function LeavePage() {
   const { profile, supabase, setProfile } = useProfile()
   const [leaves, setLeaves] = useState<Leave[]>([])
@@ -63,7 +81,7 @@ export default function LeavePage() {
   const [showForm, setShowForm] = useState(false)
   const [loadError, setLoadError] = useState<string | null>(null)
 
-  // Form state
+  // Leave application form state
   const [formType, setFormType] = useState<'Annual Leave' | 'Medical Leave'>('Annual Leave')
   const [formStart, setFormStart] = useState('')
   const [formEnd, setFormEnd] = useState('')
@@ -71,6 +89,12 @@ export default function LeavePage() {
   const [formFile, setFormFile] = useState<File | null>(null)
   const [formError, setFormError] = useState('')
   const [saving, setSaving] = useState(false)
+
+  // Cancellation request state
+  const [cancellingLeave, setCancellingLeave] = useState<Leave | null>(null)
+  const [cancelReason, setCancelReason] = useState('')
+  const [cancelError, setCancelError] = useState('')
+  const [cancelSaving, setCancelSaving] = useState(false)
 
   const isHrOrMgmt = profile && (profile.role === 'hr' || profile.role === 'management')
 
@@ -154,6 +178,7 @@ export default function LeavePage() {
       receipt_path: receiptPath, receipt_name: receiptName,
       approved_by: isManagement ? 'Auto (Management)' : null,
       approved_at: isManagement ? new Date().toISOString() : null,
+      cancellation_reason: null,
     })
     if (error) { setFormError(error.message) } else {
       if (isManagement) {
@@ -168,6 +193,27 @@ export default function LeavePage() {
     setSaving(false)
   }
 
+  // Staff requests cancellation of their own leave
+  async function handleRequestCancellation(e: React.FormEvent) {
+    e.preventDefault()
+    if (!cancellingLeave || !profile) return
+    setCancelError('')
+    setCancelSaving(true)
+    const { error } = await supabase.from('leaves').update({
+      status: 'cancellation_requested',
+      cancellation_reason: cancelReason || null,
+    }).eq('id', cancellingLeave.id)
+    if (error) {
+      setCancelError(error.message)
+    } else {
+      setCancellingLeave(null)
+      setCancelReason('')
+      loadLeaves()
+    }
+    setCancelSaving(false)
+  }
+
+  // HR/Mgmt approves or rejects a leave application (pending → approved/rejected)
   async function handleApproval(leave: Leave, status: 'approved' | 'rejected') {
     if (!profile) return
     const { error } = await supabase.from('leaves').update({
@@ -183,9 +229,39 @@ export default function LeavePage() {
     loadLeaves()
   }
 
+  // HR/Mgmt approves or rejects a cancellation request
+  async function handleCancellationApproval(leave: Leave, action: 'approve' | 'reject') {
+    if (!profile) return
+    if (action === 'approve') {
+      // Mark as cancelled
+      await supabase.from('leaves').update({ status: 'cancelled' }).eq('id', leave.id)
+      // Only decrement balance if the leave had been approved previously (approved_by is set)
+      if (leave.approved_by) {
+        const field = leave.type === 'Annual Leave' ? 'al_used' : 'ml_used'
+        const { data: tpData } = await adminRead<Profile>('profiles', { filters: [{ type: 'eq', col: 'id', val: leave.user_id }] })
+        const tp = tpData[0]
+        if (tp) {
+          const current = leave.type === 'Annual Leave' ? tp.al_used : tp.ml_used
+          await supabase.from('profiles').update({ [field]: Math.max(0, current - leave.days) }).eq('id', leave.user_id)
+        }
+      }
+    } else {
+      // Reject cancellation — restore to previous status
+      const restored = leave.approved_by ? 'approved' : 'pending'
+      await supabase.from('leaves').update({ status: restored, cancellation_reason: null }).eq('id', leave.id)
+    }
+    loadLeaves()
+  }
+
   const alBalance = profile ? profile.al_entitled - profile.al_used : 0
   const mlBalance = profile ? profile.ml_entitled - profile.ml_used : 0
-  const filteredLeaves = tab === 'approvals' ? leaves.filter(l => l.status === 'pending' && canApprove(l)) : leaves
+
+  // Approvals tab: pending leaves + cancellation requests
+  const filteredLeaves = tab === 'approvals'
+    ? leaves.filter(l => (l.status === 'pending' || l.status === 'cancellation_requested') && canApprove(l))
+    : leaves
+
+  const approvalCount = leaves.filter(l => (l.status === 'pending' || l.status === 'cancellation_requested') && canApprove(l)).length
 
   return (
     <>
@@ -256,8 +332,13 @@ export default function LeavePage() {
         )}
         {isHrOrMgmt && (
           <button onClick={() => setTab('approvals')}
-            className={`px-4 py-2 rounded-lg text-sm font-medium transition ${tab === 'approvals' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500'}`}>
+            className={`px-4 py-2 rounded-lg text-sm font-medium transition relative ${tab === 'approvals' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500'}`}>
             Approvals
+            {approvalCount > 0 && (
+              <span className="absolute -top-1 -right-1 w-4 h-4 bg-red-500 text-white text-[9px] font-bold rounded-full flex items-center justify-center">
+                {approvalCount > 9 ? '9+' : approvalCount}
+              </span>
+            )}
           </button>
         )}
         {isHrOrMgmt && (
@@ -268,7 +349,7 @@ export default function LeavePage() {
         )}
       </div>
 
-      {/* Leave form modal */}
+      {/* Leave application form modal */}
       {showForm && (
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 px-4">
           <div className="bg-white rounded-2xl p-6 w-full max-w-md max-h-[90vh] overflow-y-auto">
@@ -335,6 +416,47 @@ export default function LeavePage() {
         </div>
       )}
 
+      {/* Cancellation request modal */}
+      {cancellingLeave && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 px-4">
+          <div className="bg-white rounded-2xl p-6 w-full max-w-md">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-lg font-bold text-slate-900">Request Leave Cancellation</h2>
+              <button onClick={() => { setCancellingLeave(null); setCancelReason(''); setCancelError('') }} className="text-slate-400 hover:text-slate-600">
+                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
+              </button>
+            </div>
+            <div className="bg-amber-50 border border-amber-100 rounded-xl p-3 mb-4">
+              <p className="text-sm font-semibold text-slate-800">{cancellingLeave.type}</p>
+              <p className="text-xs text-slate-500 mt-0.5">
+                {new Date(cancellingLeave.start_date + 'T00:00:00').toLocaleDateString('en-MY', { day: 'numeric', month: 'short' })} –{' '}
+                {new Date(cancellingLeave.end_date + 'T00:00:00').toLocaleDateString('en-MY', { day: 'numeric', month: 'short', year: 'numeric' })} · {cancellingLeave.days} day(s)
+              </p>
+            </div>
+            <p className="text-xs text-slate-500 mb-4">Your cancellation request will be reviewed by HR or Management. Your leave will remain active until approved.</p>
+            <form onSubmit={handleRequestCancellation} className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">Reason for cancellation <span className="text-slate-400">(optional)</span></label>
+                <textarea value={cancelReason} onChange={e => setCancelReason(e.target.value)} rows={2}
+                  placeholder="Why are you cancelling this leave?"
+                  className="w-full px-3 py-2.5 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 resize-none" />
+              </div>
+              {cancelError && <p className="text-sm text-red-600 bg-red-50 px-3 py-2 rounded-xl">{cancelError}</p>}
+              <div className="flex gap-3">
+                <button type="button" onClick={() => { setCancellingLeave(null); setCancelReason(''); setCancelError('') }}
+                  className="flex-1 py-2.5 border border-gray-200 text-slate-600 text-sm font-medium rounded-xl hover:bg-slate-50 transition">
+                  Back
+                </button>
+                <button type="submit" disabled={cancelSaving}
+                  className="flex-1 bg-orange-500 hover:bg-orange-600 text-white font-bold py-2.5 rounded-xl transition disabled:opacity-50">
+                  {cancelSaving ? 'Submitting...' : 'Request Cancellation'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
       {/* Staff Balances */}
       {tab === 'balances' && (
         <div className="bg-white border border-gray-100 rounded-2xl overflow-x-auto">
@@ -381,7 +503,7 @@ export default function LeavePage() {
                 <th className="text-left text-xs font-medium text-slate-400 px-5 py-3">Days</th>
                 <th className="text-left text-xs font-medium text-slate-400 px-5 py-3">Reason</th>
                 <th className="text-left text-xs font-medium text-slate-400 px-5 py-3">Status</th>
-                {tab === 'approvals' && <th className="text-left text-xs font-medium text-slate-400 px-5 py-3">Action</th>}
+                <th className="text-left text-xs font-medium text-slate-400 px-5 py-3">Action</th>
               </tr>
             </thead>
             <tbody>
@@ -403,7 +525,10 @@ export default function LeavePage() {
                   </td>
                   <td className="px-5 py-3 text-sm text-slate-600">{leave.days}</td>
                   <td className="px-5 py-3">
-                    <p className="text-sm text-slate-600 max-w-[200px] truncate">{leave.reason}</p>
+                    <p className="text-sm text-slate-600 max-w-[180px] truncate">{leave.reason}</p>
+                    {leave.cancellation_reason && (
+                      <p className="text-xs text-orange-500 mt-0.5 max-w-[180px] truncate">Cancel reason: {leave.cancellation_reason}</p>
+                    )}
                     {leave.receipt_name && (
                       <button onClick={async () => {
                         const { data } = await supabase.storage.from('receipts').createSignedUrl(leave.receipt_path!, 60)
@@ -414,22 +539,43 @@ export default function LeavePage() {
                     )}
                   </td>
                   <td className="px-5 py-3">
-                    <span className={`inline-flex px-2.5 py-1 rounded-lg text-xs font-semibold ${
-                      leave.status === 'approved' ? 'bg-green-50 text-green-600' :
-                      leave.status === 'rejected' ? 'bg-red-50 text-red-600' : 'bg-amber-50 text-amber-600'
-                    }`}>{leave.status.charAt(0).toUpperCase() + leave.status.slice(1)}</span>
-                    {leave.approved_by && <p className="text-[10px] text-slate-400 mt-0.5">by {leave.approved_by}</p>}
+                    <span className={`inline-flex px-2.5 py-1 rounded-lg text-xs font-semibold ${statusBadge(leave.status)}`}>
+                      {statusLabel(leave.status)}
+                    </span>
+                    {leave.approved_by && leave.status !== 'cancellation_requested' && (
+                      <p className="text-[10px] text-slate-400 mt-0.5">by {leave.approved_by}</p>
+                    )}
                   </td>
-                  {tab === 'approvals' && (
-                    <td className="px-5 py-3">
+                  <td className="px-5 py-3">
+                    {/* Staff: request cancellation on own pending/approved leaves */}
+                    {tab === 'my' && profile && leave.user_id === profile.id &&
+                      (leave.status === 'pending' || leave.status === 'approved') && (
+                      <button onClick={() => { setCancellingLeave(leave); setCancelReason(''); setCancelError('') }}
+                        className="px-3 py-1 bg-orange-50 text-orange-600 text-xs font-semibold rounded-lg hover:bg-orange-100 transition whitespace-nowrap">
+                        Request Cancel
+                      </button>
+                    )}
+
+                    {/* HR/Mgmt: approve/reject pending leave */}
+                    {tab === 'approvals' && leave.status === 'pending' && (
                       <div className="flex gap-2">
                         <button onClick={() => handleApproval(leave, 'approved')}
                           className="px-3 py-1 bg-green-50 text-green-600 text-xs font-semibold rounded-lg hover:bg-green-100 transition">Approve</button>
                         <button onClick={() => handleApproval(leave, 'rejected')}
                           className="px-3 py-1 bg-red-50 text-red-600 text-xs font-semibold rounded-lg hover:bg-red-100 transition">Reject</button>
                       </div>
-                    </td>
-                  )}
+                    )}
+
+                    {/* HR/Mgmt: approve/reject cancellation request */}
+                    {tab === 'approvals' && leave.status === 'cancellation_requested' && (
+                      <div className="flex gap-2">
+                        <button onClick={() => handleCancellationApproval(leave, 'approve')}
+                          className="px-3 py-1 bg-orange-50 text-orange-600 text-xs font-semibold rounded-lg hover:bg-orange-100 transition whitespace-nowrap">Approve Cancel</button>
+                        <button onClick={() => handleCancellationApproval(leave, 'reject')}
+                          className="px-3 py-1 bg-slate-100 text-slate-600 text-xs font-semibold rounded-lg hover:bg-slate-200 transition whitespace-nowrap">Keep Leave</button>
+                      </div>
+                    )}
+                  </td>
                 </tr>
               ))}
               {filteredLeaves.length === 0 && (

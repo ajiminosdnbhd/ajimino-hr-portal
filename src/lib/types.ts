@@ -37,11 +37,12 @@ export interface Leave {
   days: number
   reason: string
   remarks: string | null
-  status: 'pending' | 'approved' | 'rejected'
+  status: 'pending' | 'approved' | 'rejected' | 'cancellation_requested' | 'cancelled'
   receipt_path: string | null
   receipt_name: string | null
   approved_by: string | null
   approved_at: string | null
+  cancellation_reason: string | null
   created_at: string
 }
 
