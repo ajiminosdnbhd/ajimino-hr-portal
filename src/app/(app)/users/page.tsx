@@ -24,6 +24,7 @@ export default function UsersPage() {
   const [formAL, setFormAL] = useState(14)
   const [formML, setFormML] = useState(14)
   const [formJoinDate, setFormJoinDate] = useState(new Date().toISOString().split('T')[0])
+  const [formPhone, setFormPhone] = useState('')
   const [formError, setFormError] = useState('')
   const [saving, setSaving] = useState(false)
 
@@ -45,6 +46,7 @@ export default function UsersPage() {
     setFormAL(14)
     setFormML(14)
     setFormJoinDate(new Date().toISOString().split('T')[0])
+    setFormPhone('')
     setFormError('')
     setEditingUser(null)
     setEditSelfOnly(false)
@@ -67,6 +69,7 @@ export default function UsersPage() {
     setFormAL(user.al_entitled)
     setFormML(user.ml_entitled)
     setFormJoinDate(user.join_date)
+    setFormPhone(user.phone || '')
     setShowForm(true)
   }
 
@@ -77,10 +80,11 @@ export default function UsersPage() {
     setSaving(true)
 
     if (editingUser) {
-      // Self-edit (staff): only name
+      // Self-edit (staff): only name and phone
       if (editSelfOnly) {
         const { error } = await supabase.from('profiles').update({
           name: formName,
+          phone: formPhone || null,
         }).eq('id', editingUser.id)
 
         if (error) {
@@ -105,6 +109,7 @@ export default function UsersPage() {
           al_entitled: formAL,
           ml_entitled: formML,
           join_date: formJoinDate,
+          phone: formPhone || null,
         }).eq('id', editingUser.id)
 
         if (error) {
@@ -141,6 +146,7 @@ export default function UsersPage() {
           al_entitled: formAL,
           ml_entitled: formML,
           join_date: formJoinDate,
+          phone: formPhone || null,
         }),
       })
 
@@ -214,6 +220,16 @@ export default function UsersPage() {
                   value={formName}
                   onChange={e => setFormName(e.target.value)}
                   required
+                  className="w-full px-3 py-2.5 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">Phone Number</label>
+                <input
+                  type="tel"
+                  value={formPhone}
+                  onChange={e => setFormPhone(e.target.value)}
+                  placeholder="e.g. 0123456789"
                   className="w-full px-3 py-2.5 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
                 />
               </div>
@@ -316,6 +332,7 @@ export default function UsersPage() {
               <th className="text-left text-xs font-medium text-slate-400 px-5 py-3">AL</th>
               <th className="text-left text-xs font-medium text-slate-400 px-5 py-3">ML</th>
               <th className="text-left text-xs font-medium text-slate-400 px-5 py-3">Join Date</th>
+              <th className="text-left text-xs font-medium text-slate-400 px-5 py-3">Phone</th>
               <th className="text-left text-xs font-medium text-slate-400 px-5 py-3">Actions</th>
             </tr>
           </thead>
@@ -360,6 +377,9 @@ export default function UsersPage() {
                   <td className="px-5 py-3 text-sm text-slate-600">
                     {new Date(user.join_date + 'T00:00:00').toLocaleDateString('en-MY', { day: 'numeric', month: 'short', year: 'numeric' })}
                   </td>
+                  <td className="px-5 py-3 text-sm text-slate-600">
+                    {user.phone || <span className="text-slate-300">—</span>}
+                  </td>
                   <td className="px-5 py-3">
                     <div className="flex items-center gap-2">
                       {canEdit && (
@@ -386,7 +406,7 @@ export default function UsersPage() {
             })}
             {users.length === 0 && (
               <tr>
-                <td colSpan={7} className="px-5 py-8 text-center text-sm text-slate-400">
+                <td colSpan={8} className="px-5 py-8 text-center text-sm text-slate-400">
                   No staff members found
                 </td>
               </tr>

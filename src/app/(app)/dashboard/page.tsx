@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { useProfile } from '@/lib/useProfile'
 import { SELANGOR_HOLIDAYS } from '@/lib/holidays'
-import { CalendarEvent } from '@/lib/types'
+import { CalendarEvent, Announcement } from '@/lib/types'
 import StatsCard from '@/components/StatsCard'
 import { adminRead } from '@/lib/adminRead'
 import LoadError from '@/components/LoadError'
@@ -13,6 +13,7 @@ export default function DashboardPage() {
   const { profile } = useProfile()
   const [stats, setStats] = useState({ staff: 0, pendingLeave: 0, todayBookings: 0, policies: 0 })
   const [upcomingEvents, setUpcomingEvents] = useState<CalendarEvent[]>([])
+  const [recentAnnouncements, setRecentAnnouncements] = useState<Announcement[]>([])
   const [loadError, setLoadError] = useState<string | null>(null)
 
   const isHrOrMgmt = profile && (profile.role === 'hr' || profile.role === 'management')
@@ -21,6 +22,7 @@ export default function DashboardPage() {
     if (profile) {
       loadStats()
       loadUpcomingEvents()
+      loadRecentAnnouncements()
     }
   }, [profile])
 
@@ -63,6 +65,26 @@ export default function DashboardPage() {
       limit: 5,
     })
     setUpcomingEvents(data)
+  }
+
+  async function loadRecentAnnouncements() {
+    if (!profile) return
+    const { data } = await adminRead<Announcement>('announcements', {
+      order: { col: 'created_at', asc: false },
+      limit: 4,
+    })
+    if (isHrOrMgmt) {
+      setRecentAnnouncements(data)
+    } else {
+      setRecentAnnouncements(
+        data.filter(a => {
+          if (a.visibility === 'all') return true
+          if (a.visibility === 'department' && a.target_departments.includes(profile.department)) return true
+          if (a.visibility === 'individual' && a.target_user_ids.includes(profile.id)) return true
+          return false
+        })
+      )
+    }
   }
 
   function formatTime(time: string | null) {
@@ -196,6 +218,43 @@ export default function DashboardPage() {
               ))}
           </div>
         </div>
+      </div>
+
+      {/* Recent Announcements */}
+      <div className="mt-6 bg-white border border-gray-100 rounded-2xl p-6">
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-lg font-bold text-slate-900">Recent Announcements</h2>
+          <Link href="/announcements" className="text-sm text-indigo-600 hover:text-indigo-700 font-medium">View all →</Link>
+        </div>
+        {recentAnnouncements.length > 0 ? (
+          <div className="space-y-3">
+            {recentAnnouncements.map(ann => (
+              <div key={ann.id} className="flex items-start gap-3 p-3 bg-slate-50 rounded-xl">
+                <div className="w-8 h-8 rounded-lg bg-indigo-50 flex items-center justify-center flex-shrink-0 mt-0.5">
+                  <svg className="w-4 h-4 text-indigo-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M11 5.882V19.24a1.76 1.76 0 01-3.417.592l-2.147-6.15M18 13a3 3 0 100-6M5.436 13.683A4.001 4.001 0 017 6h1.832c4.1 0 7.625-1.234 9.168-3v14c-1.543-1.766-5.067-3-9.168-3H7a3.988 3.988 0 01-1.564-.317z" />
+                  </svg>
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-semibold text-slate-900">{ann.title}</p>
+                  <p className="text-xs text-slate-500 mt-0.5">
+                    {new Date(ann.created_at).toLocaleDateString('en-MY', { day: 'numeric', month: 'short', year: 'numeric' })}
+                  </p>
+                  {ann.content && (
+                    <p className="text-xs text-slate-400 mt-0.5 truncate">{ann.content}</p>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div className="text-center py-8">
+            <p className="text-sm text-slate-400">No announcements yet</p>
+            <Link href="/announcements" className="text-xs text-indigo-600 hover:text-indigo-700 font-medium mt-1 inline-block">
+              Go to Announcements
+            </Link>
+          </div>
+        )}
       </div>
     </>
   )

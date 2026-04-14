@@ -8,6 +8,21 @@ export interface Profile {
   al_used: number
   ml_used: number
   join_date: string
+  phone: string | null
+  created_at: string
+}
+
+export interface Announcement {
+  id: string
+  title: string
+  content: string | null
+  attachment_path: string | null
+  attachment_name: string | null
+  visibility: 'all' | 'department' | 'individual'
+  target_departments: string[]
+  target_user_ids: string[]
+  created_by: string
+  created_by_id: string
   created_at: string
 }
 

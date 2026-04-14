@@ -3,7 +3,7 @@ import { NextRequest, NextResponse } from 'next/server'
 
 export async function POST(request: NextRequest) {
   const body = await request.json()
-  const { email, password, name, department, role, al_entitled, ml_entitled, join_date } = body
+  const { email, password, name, department, role, al_entitled, ml_entitled, join_date, phone } = body
 
   // Use service role key — bypasses rate limits and email confirmation
   const supabaseAdmin = createClient(
@@ -34,6 +34,7 @@ export async function POST(request: NextRequest) {
     al_used: 0,
     ml_used: 0,
     join_date,
+    phone: phone || null,
   })
 
   if (profileError) {
