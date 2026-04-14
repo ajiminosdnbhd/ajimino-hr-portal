@@ -1,13 +1,11 @@
 'use client'
 
 import { useState } from 'react'
-import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { AlertCircle, Loader2, CheckCircle2, Eye, EyeOff } from 'lucide-react'
 import Image from 'next/image'
 
 export default function LoginPage() {
-  const router = useRouter()
   const [email,    setEmail]    = useState('')
   const [password, setPassword] = useState('')
   const [showPass, setShowPass] = useState(false)
@@ -32,8 +30,10 @@ export default function LoginPage() {
         setError(msg)
         return
       }
-      router.push('/dashboard')
-      router.refresh()
+      // Full navigation so the new page reads session cookies from scratch.
+      // Client-side router.push() relies on onAuthStateChange firing in time,
+      // which is flaky. A hard redirect is simpler and always works.
+      window.location.href = '/dashboard'
     } catch {
       setError('An unexpected error occurred. Please try again.')
     } finally {
