@@ -4,6 +4,7 @@ import { createContext, useContext, useEffect, useState, useMemo } from 'react'
 import { createBrowserClient } from '@supabase/ssr'
 import { Profile } from '@/lib/types'
 import { SupabaseClient } from '@supabase/supabase-js'
+import { adminRead } from '@/lib/adminRead'
 
 interface ProfileContextType {
   profile: Profile | null
@@ -37,6 +38,11 @@ export function ProfileProvider({
   useEffect(() => {
     let mounted = true
 
+    // Force the browser client to load its session from cookies immediately.
+    // Without this call, queries that run before onAuthStateChange fires go out
+    // unauthenticated and RLS returns empty results.
+    supabase.auth.getSession()
+
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
       if (!mounted) return
 
@@ -47,12 +53,10 @@ export function ProfileProvider({
 
       if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED' || event === 'USER_UPDATED') {
         if (session?.user) {
-          const { data } = await supabase
-            .from('profiles')
-            .select('*')
-            .eq('id', session.user.id)
-            .single()
-          if (mounted) setProfile((data as Profile) ?? null)
+          const { data: profData } = await adminRead<Profile>('profiles', {
+            filters: [{ type: 'eq', col: 'id', val: session.user.id }]
+          })
+          if (mounted && profData[0]) setProfile(profData[0])
         }
       }
     })

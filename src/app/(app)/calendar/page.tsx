@@ -3,8 +3,10 @@
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { useProfile } from '@/lib/useProfile'
-import { CalendarEvent, Leave, Booking, ROOMS } from '@/lib/types'
+import { CalendarEvent, Leave, Booking, Profile, ROOMS } from '@/lib/types'
 import { SELANGOR_HOLIDAYS, isHoliday } from '@/lib/holidays'
+import { adminRead } from '@/lib/adminRead'
+import LoadError from '@/components/LoadError'
 
 const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June',
   'July', 'August', 'September', 'October', 'November', 'December']
@@ -49,6 +51,7 @@ export default function PlannerPage() {
   const [leaves, setLeaves] = useState<Leave[]>([])
   const [bookings, setBookings] = useState<Booking[]>([])
   const [allProfiles, setAllProfiles] = useState<{ id: string; name: string; department: string; role: string }[]>([])
+  const [loadError, setLoadError] = useState<string | null>(null)
 
   // Event form
   const [editingEvent, setEditingEvent] = useState<CalendarEvent | null>(null)
@@ -79,36 +82,50 @@ export default function PlannerPage() {
   const isHrOrMgmt = profile && (profile.role === 'hr' || profile.role === 'management')
 
   useEffect(() => {
-    if (profile) {
-      loadMonthData()
-      supabase.from('profiles').select('id, name, department, role').order('name')
-        .then(({ data }) => { if (data) setAllProfiles(data) })
-    }
+    if (profile) loadMonthData()
   }, [profile, month, year])
 
   async function loadMonthData() {
     if (!profile) return
-    const pad = String(month + 1).padStart(2, '0')
-    const from = `${year}-${pad}-01`
-    const to = `${year}-${pad}-31`
+    setLoadError(null)
+    const pad     = String(month + 1).padStart(2, '0')
+    const from    = `${year}-${pad}-01`
+    const lastDay = new Date(year, month + 1, 0).getDate()
+    const to      = `${year}-${pad}-${String(lastDay).padStart(2, '0')}`
 
-    // Events: HR/Mgmt see all; staff see targeted-to-them only
-    let evtQ = supabase.from('events').select('*').gte('date', from).lte('date', to).order('date')
-    if (!isHrOrMgmt) {
-      evtQ = evtQ.or(`visibility.eq.all,and(visibility.eq.department,target_department.eq.${profile.department}),and(visibility.eq.individual,target_user_ids.cs.{${profile.id}})`)
-    }
-    const { data: evtData } = await evtQ
-    if (evtData) setEvents(evtData as CalendarEvent[])
+    const evtFilters = isHrOrMgmt ? [] : [
+      { type: 'or' as const, val: `visibility.eq.all,and(visibility.eq.department,target_department.eq.${profile.department}),and(visibility.eq.individual,target_user_ids.cs.{${profile.id}})` }
+    ]
 
-    // Leaves: HR/Mgmt see all; staff see own only
-    let leaveQ = supabase.from('leaves').select('*').or(`and(start_date.lte.${to},end_date.gte.${from})`)
-    if (!isHrOrMgmt) leaveQ = leaveQ.eq('user_id', profile.id)
-    const { data: leaveData } = await leaveQ
-    if (leaveData) setLeaves(leaveData)
+    const [evtRes, bookRes, leaveRes, profileRes] = await Promise.all([
+      adminRead<CalendarEvent>('events', {
+        filters: [{ type: 'gte', col: 'date', val: from }, { type: 'lte', col: 'date', val: to }, ...evtFilters],
+        order: { col: 'date' },
+      }),
+      adminRead<Booking>('bookings', {
+        filters: [{ type: 'gte', col: 'date', val: from }, { type: 'lte', col: 'date', val: to }],
+        order: { col: 'start_time' },
+      }),
+      adminRead<Leave>('leaves', {
+        filters: [
+          { type: 'lte', col: 'start_date', val: to },
+          { type: 'gte', col: 'end_date', val: from },
+          ...(isHrOrMgmt ? [] : [{ type: 'eq' as const, col: 'user_id', val: profile.id }]),
+        ],
+      }),
+      adminRead<{ id: string; name: string; department: string; role: string }>('profiles', {
+        select: 'id, name, department, role',
+        order: { col: 'name' },
+      }),
+    ])
 
-    // Bookings: EVERYONE sees all bookings (room availability awareness)
-    const { data: bookData } = await supabase.from('bookings').select('*').gte('date', from).lte('date', to).order('start_time')
-    if (bookData) setBookings(bookData)
+    if (evtRes.error) { setLoadError(evtRes.error); return }
+    if (bookRes.error) { setLoadError(bookRes.error); return }
+
+    setEvents(evtRes.data)
+    setBookings(bookRes.data)
+    setLeaves(leaveRes.data)
+    if (profileRes.data.length > 0) setAllProfiles(profileRes.data)
   }
 
   function prevMonth() {
@@ -259,7 +276,10 @@ export default function PlannerPage() {
     }).eq('id', leave.id)
     if (status === 'approved') {
       const field = leave.type === 'Annual Leave' ? 'al_used' : 'ml_used'
-      const { data: tp } = await supabase.from('profiles').select('*').eq('id', leave.user_id).single()
+      const { data: tpData } = await adminRead<Profile>('profiles', {
+        filters: [{ type: 'eq', col: 'id', val: leave.user_id }],
+      })
+      const tp = tpData[0]
       if (tp) await supabase.from('profiles').update({ [field]: (leave.type === 'Annual Leave' ? tp.al_used : tp.ml_used) + leave.days }).eq('id', leave.user_id)
     }
     loadMonthData()
@@ -561,6 +581,7 @@ export default function PlannerPage() {
       <div className="flex items-center justify-between mb-6 gap-3 flex-wrap">
         <div>
           <h1 className="text-2xl font-bold text-slate-900">Planner</h1>
+          {loadError && <LoadError message={loadError} />}
           <p className="text-slate-500 text-sm mt-1">
             {isHrOrMgmt
               ? `${events.length} event(s) · ${leaves.filter(l => l.status === 'approved').length} approved leave(s) · ${bookings.length} booking(s) this month`

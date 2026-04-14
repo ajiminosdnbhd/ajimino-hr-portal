@@ -4,12 +4,15 @@ import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useProfile } from '@/lib/useProfile'
 import { Profile, DEPARTMENTS, getRoleFromDepartment } from '@/lib/types'
+import { adminRead } from '@/lib/adminRead'
+import LoadError from '@/components/LoadError'
 
 export default function UsersPage() {
   const { profile, supabase, setProfile } = useProfile()
   const router = useRouter()
   const [users, setUsers] = useState<Profile[]>([])
   const [showForm, setShowForm] = useState(false)
+  const [loadError, setLoadError] = useState<string | null>(null)
   const [editingUser, setEditingUser] = useState<Profile | null>(null)
   const [editSelfOnly, setEditSelfOnly] = useState(false)
 
@@ -27,11 +30,11 @@ export default function UsersPage() {
   useEffect(() => { if (profile) loadUsers() }, [profile])
 
   async function loadUsers() {
-    const { data } = await supabase.from('profiles').select('*').order('name')
-    if (data) {
-      const roleOrder: Record<string, number> = { management: 0, hr: 1, staff: 2 }
-      setUsers(data.sort((a, b) => (roleOrder[a.role] ?? 3) - (roleOrder[b.role] ?? 3)))
-    }
+    setLoadError(null)
+    const { data, error } = await adminRead<Profile>('profiles', { order: { col: 'name' } })
+    if (error) { setLoadError(error); return }
+    const roleOrder: Record<string, number> = { management: 0, hr: 1, staff: 2 }
+    setUsers(data.sort((a, b) => (roleOrder[a.role] ?? 3) - (roleOrder[b.role] ?? 3)))
   }
 
   function resetForm() {
@@ -87,8 +90,8 @@ export default function UsersPage() {
           resetForm()
           // Refresh own profile if editing self
           if (editingUser.id === profile.id) {
-            const { data: updated } = await supabase.from('profiles').select('*').eq('id', profile.id).single()
-            if (updated) setProfile(updated as Profile)
+            const { data: updated } = await adminRead<Profile>('profiles', { filters: [{ type: 'eq', col: 'id', val: profile.id }] })
+            if (updated[0]) setProfile(updated[0])
           }
           loadUsers()
         }
@@ -110,8 +113,8 @@ export default function UsersPage() {
           setShowForm(false)
           resetForm()
           if (editingUser.id === profile.id) {
-            const { data: updated } = await supabase.from('profiles').select('*').eq('id', profile.id).single()
-            if (updated) setProfile(updated as Profile)
+            const { data: updated } = await adminRead<Profile>('profiles', { filters: [{ type: 'eq', col: 'id', val: profile.id }] })
+            if (updated[0]) setProfile(updated[0])
           }
           loadUsers()
         }
@@ -174,6 +177,7 @@ export default function UsersPage() {
       <div className="flex items-center justify-between mb-8">
         <div>
           <h1 className="text-2xl font-bold text-slate-900">User Management</h1>
+          {loadError && <LoadError message={loadError} />}
           <p className="text-slate-500 text-sm mt-1">
             {isHrOrMgmt ? 'Manage staff accounts and entitlements' : 'View staff directory'}
           </p>

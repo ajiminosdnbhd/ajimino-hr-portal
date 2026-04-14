@@ -3,6 +3,8 @@
 import { useEffect, useState } from 'react'
 import { useProfile } from '@/lib/useProfile'
 import { Profile, Payslip } from '@/lib/types'
+import { adminRead } from '@/lib/adminRead'
+import LoadError from '@/components/LoadError'
 
 const MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']
 
@@ -11,6 +13,7 @@ export default function PayslipsPage() {
   const [payslips, setPayslips] = useState<Payslip[]>([])
   const [allProfiles, setAllProfiles] = useState<Profile[]>([])
   const [showForm, setShowForm] = useState(false)
+  const [loadError, setLoadError] = useState<string | null>(null)
 
   // Form
   const [formUserId, setFormUserId] = useState('')
@@ -27,23 +30,24 @@ export default function PayslipsPage() {
     if (profile) {
       loadPayslips()
       if (profile.role === 'hr' || profile.role === 'management') {
-        supabase.from('profiles').select('*').order('name').then(({ data }) => {
-          if (data) setAllProfiles(data as Profile[])
-        })
+        adminRead<Profile>('profiles', { order: { col: 'name' } })
+          .then(({ data }) => setAllProfiles(data))
       }
     }
   }, [profile, filterYear])
 
   async function loadPayslips() {
     if (!profile) return
-    let query = supabase.from('payslips').select('*').eq('year', filterYear).order('month', { ascending: false })
-
-    if (profile.role === 'staff') {
-      query = query.eq('user_id', profile.id)
-    }
-
-    const { data } = await query
-    if (data) setPayslips(data)
+    const filters = [
+      { type: 'eq' as const, col: 'year', val: filterYear },
+      ...(profile.role === 'staff' ? [{ type: 'eq' as const, col: 'user_id', val: profile.id }] : []),
+    ]
+    const { data, error } = await adminRead<Payslip>('payslips', {
+      filters,
+      order: { col: 'month', asc: false },
+    })
+    if (error) { setLoadError(error); return }
+    setPayslips(data)
   }
 
   async function handleSubmit(e: React.FormEvent) {
@@ -110,6 +114,7 @@ export default function PayslipsPage() {
       <div className="flex items-center justify-between mb-8">
         <div>
           <h1 className="text-2xl font-bold text-slate-900">Payslips</h1>
+          {loadError && <LoadError message={loadError} />}
           <p className="text-slate-500 text-sm mt-1">
             {isHrOrMgmt ? 'Upload and manage staff payslips' : 'View and download your payslips'}
           </p>

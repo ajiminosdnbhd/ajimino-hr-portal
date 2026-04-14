@@ -6,11 +6,14 @@ import { useProfile } from '@/lib/useProfile'
 import { SELANGOR_HOLIDAYS } from '@/lib/holidays'
 import { CalendarEvent } from '@/lib/types'
 import StatsCard from '@/components/StatsCard'
+import { adminRead } from '@/lib/adminRead'
+import LoadError from '@/components/LoadError'
 
 export default function DashboardPage() {
-  const { profile, supabase } = useProfile()
+  const { profile } = useProfile()
   const [stats, setStats] = useState({ staff: 0, pendingLeave: 0, todayBookings: 0, policies: 0 })
   const [upcomingEvents, setUpcomingEvents] = useState<CalendarEvent[]>([])
+  const [loadError, setLoadError] = useState<string | null>(null)
 
   const isHrOrMgmt = profile && (profile.role === 'hr' || profile.role === 'management')
 
@@ -23,54 +26,43 @@ export default function DashboardPage() {
 
   async function loadStats() {
     if (!profile) return
+    setLoadError(null)
     const today = new Date().toISOString().split('T')[0]
 
     if (isHrOrMgmt) {
-      // HR/Management: company-wide stats
       const [staffRes, leaveRes, bookingRes, policyRes] = await Promise.all([
-        supabase.from('profiles').select('id', { count: 'exact', head: true }),
-        supabase.from('leaves').select('id', { count: 'exact', head: true }).eq('status', 'pending'),
-        supabase.from('bookings').select('id', { count: 'exact', head: true }).eq('date', today),
-        supabase.from('policies').select('id', { count: 'exact', head: true }),
+        adminRead('profiles', { select: 'id', countOnly: true }),
+        adminRead('leaves', { select: 'id', filters: [{ type: 'eq', col: 'status', val: 'pending' }], countOnly: true }),
+        adminRead('bookings', { select: 'id', filters: [{ type: 'eq', col: 'date', val: today }], countOnly: true }),
+        adminRead('policies', { select: 'id', countOnly: true }),
       ])
       setStats({
-        staff: staffRes.count || 0,
-        pendingLeave: leaveRes.count || 0,
-        todayBookings: bookingRes.count || 0,
-        policies: policyRes.count || 0,
+        staff: staffRes.count,
+        pendingLeave: leaveRes.count,
+        todayBookings: bookingRes.count,
+        policies: policyRes.count,
       })
     } else {
-      // Staff: own today's bookings + active policies count
       const [bookingRes, policyRes] = await Promise.all([
-        supabase.from('bookings').select('id', { count: 'exact', head: true }).eq('date', today).eq('user_id', profile.id),
-        supabase.from('policies').select('id', { count: 'exact', head: true }),
+        adminRead('bookings', { select: 'id', filters: [{ type: 'eq', col: 'date', val: today }, { type: 'eq', col: 'user_id', val: profile.id }], countOnly: true }),
+        adminRead('policies', { select: 'id', countOnly: true }),
       ])
-      setStats({
-        staff: 0,
-        pendingLeave: 0,
-        todayBookings: bookingRes.count || 0,
-        policies: policyRes.count || 0,
-      })
+      setStats({ staff: 0, pendingLeave: 0, todayBookings: bookingRes.count, policies: policyRes.count })
     }
   }
 
   async function loadUpcomingEvents() {
     if (!profile) return
     const today = new Date().toISOString().split('T')[0]
-    let query = supabase
-      .from('events')
-      .select('*')
-      .gte('date', today)
-      .order('date')
-      .limit(5)
-
-    if (!isHrOrMgmt) {
-      query = query.or(
-        `visibility.eq.all,and(visibility.eq.department,target_department.eq.${profile.department}),and(visibility.eq.individual,target_user_ids.cs.{${profile.id}})`
-      )
-    }
-    const { data } = await query
-    if (data) setUpcomingEvents(data as CalendarEvent[])
+    const filters = isHrOrMgmt ? [] : [
+      { type: 'or' as const, val: `visibility.eq.all,and(visibility.eq.department,target_department.eq.${profile.department}),and(visibility.eq.individual,target_user_ids.cs.{${profile.id}})` }
+    ]
+    const { data } = await adminRead<CalendarEvent>('events', {
+      filters: [{ type: 'gte', col: 'date', val: today }, ...filters],
+      order: { col: 'date' },
+      limit: 5,
+    })
+    setUpcomingEvents(data)
   }
 
   function formatTime(time: string | null) {
@@ -94,6 +86,7 @@ export default function DashboardPage() {
       <div className="flex items-center justify-between mb-8">
         <div>
           <h1 className="text-2xl font-bold text-slate-900">Dashboard</h1>
+          {loadError && <LoadError message={loadError} />}
           <p className="text-slate-500 text-sm mt-1">
             Welcome back{profile ? `, ${profile.name}` : ''}
           </p>

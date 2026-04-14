@@ -3,11 +3,14 @@
 import { useEffect, useState } from 'react'
 import { useProfile } from '@/lib/useProfile'
 import { Policy, DEPARTMENTS } from '@/lib/types'
+import { adminRead } from '@/lib/adminRead'
+import LoadError from '@/components/LoadError'
 
 export default function PoliciesPage() {
   const { profile, supabase } = useProfile()
   const [policies, setPolicies] = useState<Policy[]>([])
   const [showForm, setShowForm] = useState(false)
+  const [loadError, setLoadError] = useState<string | null>(null)
 
   // Form
   const [formTitle, setFormTitle] = useState('')
@@ -21,16 +24,19 @@ export default function PoliciesPage() {
   useEffect(() => { if (profile) loadPolicies() }, [profile])
 
   async function loadPolicies() {
-    const { data } = await supabase.from('policies').select('*').order('created_at', { ascending: false })
-    if (data && profile) {
-      const filtered = data.filter(p =>
-        p.target_departments.length === 0 ||
-        p.target_departments.includes('All') ||
-        p.target_departments.includes(profile.department) ||
-        profile.role === 'hr' || profile.role === 'management'
-      )
-      setPolicies(filtered)
-    }
+    if (!profile) return
+    setLoadError(null)
+    const { data, error } = await adminRead<Policy>('policies', {
+      order: { col: 'created_at', asc: false },
+    })
+    if (error) { setLoadError(error); return }
+    const filtered = data.filter(p =>
+      p.target_departments.length === 0 ||
+      p.target_departments.includes('All') ||
+      p.target_departments.includes(profile.department) ||
+      profile.role === 'hr' || profile.role === 'management'
+    )
+    setPolicies(filtered)
   }
 
   async function handleSubmit(e: React.FormEvent) {
@@ -93,6 +99,7 @@ export default function PoliciesPage() {
       <div className="flex items-center justify-between mb-8">
         <div>
           <h1 className="text-2xl font-bold text-slate-900">Company Policies</h1>
+          {loadError && <LoadError message={loadError} />}
           <p className="text-slate-500 text-sm mt-1">View and manage company policies</p>
         </div>
         {isHrOrMgmt && (

@@ -4,6 +4,8 @@ import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { useProfile } from '@/lib/useProfile'
 import { Leave, Profile } from '@/lib/types'
+import { adminRead } from '@/lib/adminRead'
+import LoadError from '@/components/LoadError'
 
 async function exportLeavesPDF(leaves: Leave[], staffProfiles: Profile[], title: string) {
   const { default: jsPDF } = await import('jspdf')
@@ -59,6 +61,7 @@ export default function LeavePage() {
   const [tab, setTab] = useState<'my' | 'approvals' | 'balances'>('my')
   const [staffProfiles, setStaffProfiles] = useState<Profile[]>([])
   const [showForm, setShowForm] = useState(false)
+  const [loadError, setLoadError] = useState<string | null>(null)
 
   // Form state
   const [formType, setFormType] = useState<'Annual Leave' | 'Medical Leave'>('Annual Leave')
@@ -79,18 +82,24 @@ export default function LeavePage() {
     if (profile) {
       loadLeaves()
       if (isHrOrMgmt) {
-        supabase.from('profiles').select('*').neq('role', 'management').order('name')
-          .then(({ data }) => { if (data) setStaffProfiles(data as Profile[]) })
+        adminRead<Profile>('profiles', {
+          filters: [{ type: 'neq', col: 'role', val: 'management' }],
+          order: { col: 'name' },
+        }).then(({ data }) => setStaffProfiles(data))
       }
     }
   }, [profile, tab])
 
   async function loadLeaves() {
     if (!profile) return
-    let query = supabase.from('leaves').select('*').order('created_at', { ascending: false })
-    if (tab === 'my') query = query.eq('user_id', profile.id)
-    const { data } = await query
-    if (data) setLeaves(data)
+    setLoadError(null)
+    const filters = tab === 'my' ? [{ type: 'eq' as const, col: 'user_id', val: profile.id }] : []
+    const { data, error } = await adminRead<Leave>('leaves', {
+      filters,
+      order: { col: 'created_at', asc: false },
+    })
+    if (error) { setLoadError(error); return }
+    setLeaves(data)
   }
 
   function calculateDays(start: string, end: string): number {
@@ -152,8 +161,8 @@ export default function LeavePage() {
         await supabase.from('profiles').update({ [field]: (formType === 'Annual Leave' ? profile.al_used : profile.ml_used) + days }).eq('id', profile.id)
       }
       setShowForm(false); setFormType('Annual Leave'); setFormStart(''); setFormEnd(''); setFormReason(''); setFormFile(null)
-      const { data: updatedProf } = await supabase.from('profiles').select('*').eq('id', profile.id).single()
-      if (updatedProf) setProfile(updatedProf)
+      const { data: profData } = await adminRead<Profile>('profiles', { filters: [{ type: 'eq', col: 'id', val: profile.id }] })
+      if (profData[0]) setProfile(profData[0])
       loadLeaves()
     }
     setSaving(false)
@@ -167,7 +176,8 @@ export default function LeavePage() {
     }).eq('id', leave.id)
     if (!error && status === 'approved') {
       const field = leave.type === 'Annual Leave' ? 'al_used' : 'ml_used'
-      const { data: tp } = await supabase.from('profiles').select('*').eq('id', leave.user_id).single()
+      const { data: tpData } = await adminRead<Profile>('profiles', { filters: [{ type: 'eq', col: 'id', val: leave.user_id }] })
+      const tp = tpData[0]
       if (tp) await supabase.from('profiles').update({ [field]: (leave.type === 'Annual Leave' ? tp.al_used : tp.ml_used) + leave.days }).eq('id', leave.user_id)
     }
     loadLeaves()
@@ -183,6 +193,7 @@ export default function LeavePage() {
       <div className="flex items-center justify-between mb-6 gap-3 flex-wrap">
         <div>
           <h1 className="text-2xl font-bold text-slate-900">Leave Management</h1>
+          {loadError && <LoadError message={loadError} />}
           <p className="text-slate-500 text-sm mt-1">Apply for leave and track balances</p>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
