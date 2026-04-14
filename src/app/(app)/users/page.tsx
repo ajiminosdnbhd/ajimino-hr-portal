@@ -318,10 +318,14 @@ export default function UsersPage() {
           <tbody>
             {users.map(user => {
               const isSelf = profile?.id === user.id
-              // Management can edit anyone; HR can edit non-management users only; staff: no edit
+              // Management can edit anyone; HR can edit non-management users only
               const canEdit = profile?.role === 'management' ||
                 (profile?.role === 'hr' && user.role !== 'management')
-              const canDelete = isHrOrMgmt && !isSelf
+              // Management can delete anyone except self; HR can delete staff/HR only (not management, not self)
+              const canDelete = (!isSelf) && (
+                profile?.role === 'management' ||
+                (profile?.role === 'hr' && user.role !== 'management')
+              )
 
               return (
                 <tr key={user.id} className="border-b border-gray-50 hover:bg-slate-50">

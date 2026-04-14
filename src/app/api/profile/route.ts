@@ -17,20 +17,35 @@ export async function GET() {
           return cookieStore.getAll()
         },
         setAll(cookiesToSet) {
-          cookiesToSet.forEach(({ name, value, options }) =>
-            cookieStore.set(name, value, options)
-          )
+          // Silently ignore: cookies cannot be set in a GET route handler.
+          // The middleware already handles session refresh on every request,
+          // so we don't need to refresh here.
+          try {
+            cookiesToSet.forEach(({ name, value, options }) =>
+              cookieStore.set(name, value, options)
+            )
+          } catch {
+            // Expected in GET handlers — session refresh is handled by middleware
+          }
         },
       },
     }
   )
 
-  // getSession() reads from HTTP-only cookies server-side.
-  // We use this (not getUser()) so we can return the tokens to the
-  // browser client, allowing it to restore its in-memory auth state.
-  const { data: { session }, error: sessionError } = await supabase.auth.getSession()
+  // Use getUser() to validate the session with Supabase's auth server.
+  // This is more reliable than getSession() which only reads cookies without
+  // verifying the token is still valid.
+  const { data: { user }, error: userError } = await supabase.auth.getUser()
 
-  if (sessionError || !session) {
+  if (userError || !user) {
+    return NextResponse.json({ profile: null }, { status: 401 })
+  }
+
+  // Now get the session to retrieve the tokens we need to send back to the
+  // browser client so it can restore its in-memory auth state.
+  const { data: { session } } = await supabase.auth.getSession()
+
+  if (!session) {
     return NextResponse.json({ profile: null }, { status: 401 })
   }
 

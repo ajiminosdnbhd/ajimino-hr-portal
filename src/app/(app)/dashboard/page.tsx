@@ -22,18 +22,36 @@ export default function DashboardPage() {
   }, [profile])
 
   async function loadStats() {
-    const [staffRes, leaveRes, bookingRes, policyRes] = await Promise.all([
-      supabase.from('profiles').select('id', { count: 'exact', head: true }),
-      supabase.from('leaves').select('id', { count: 'exact', head: true }).eq('status', 'pending'),
-      supabase.from('bookings').select('id', { count: 'exact', head: true }).eq('date', new Date().toISOString().split('T')[0]),
-      supabase.from('policies').select('id', { count: 'exact', head: true }),
-    ])
-    setStats({
-      staff: staffRes.count || 0,
-      pendingLeave: leaveRes.count || 0,
-      todayBookings: bookingRes.count || 0,
-      policies: policyRes.count || 0,
-    })
+    if (!profile) return
+    const today = new Date().toISOString().split('T')[0]
+
+    if (isHrOrMgmt) {
+      // HR/Management: company-wide stats
+      const [staffRes, leaveRes, bookingRes, policyRes] = await Promise.all([
+        supabase.from('profiles').select('id', { count: 'exact', head: true }),
+        supabase.from('leaves').select('id', { count: 'exact', head: true }).eq('status', 'pending'),
+        supabase.from('bookings').select('id', { count: 'exact', head: true }).eq('date', today),
+        supabase.from('policies').select('id', { count: 'exact', head: true }),
+      ])
+      setStats({
+        staff: staffRes.count || 0,
+        pendingLeave: leaveRes.count || 0,
+        todayBookings: bookingRes.count || 0,
+        policies: policyRes.count || 0,
+      })
+    } else {
+      // Staff: own today's bookings + active policies count
+      const [bookingRes, policyRes] = await Promise.all([
+        supabase.from('bookings').select('id', { count: 'exact', head: true }).eq('date', today).eq('user_id', profile.id),
+        supabase.from('policies').select('id', { count: 'exact', head: true }),
+      ])
+      setStats({
+        staff: 0,
+        pendingLeave: 0,
+        todayBookings: bookingRes.count || 0,
+        policies: policyRes.count || 0,
+      })
+    }
   }
 
   async function loadUpcomingEvents() {
@@ -88,7 +106,7 @@ export default function DashboardPage() {
         </Link>
       </div>
 
-      {/* Company stats — HR + Management only */}
+      {/* HR + Management: company-wide stats row */}
       {isHrOrMgmt && (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
           <StatsCard title="Total Staff" value={stats.staff}
@@ -106,9 +124,9 @@ export default function DashboardPage() {
         </div>
       )}
 
-      {/* Personal leave balance — all users */}
+      {/* Personal stats — all users */}
       {profile && (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-8">
+        <div className={`grid gap-4 mb-8 ${isHrOrMgmt ? 'grid-cols-1 md:grid-cols-2' : 'grid-cols-1 md:grid-cols-2 lg:grid-cols-4'}`}>
           <StatsCard title="AL Remaining" value={profile.al_entitled - profile.al_used}
             subtitle={`${profile.al_used} of ${profile.al_entitled} days used`}
             icon={<svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>}
@@ -117,6 +135,18 @@ export default function DashboardPage() {
             subtitle={`${profile.ml_used} of ${profile.ml_entitled} days used`}
             icon={<svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>}
           />
+          {/* Staff only: today's bookings + active policies */}
+          {!isHrOrMgmt && (
+            <>
+              <StatsCard title="My Bookings Today" value={stats.todayBookings}
+                subtitle={new Date().toLocaleDateString('en-MY', { weekday: 'long', day: 'numeric', month: 'short' })}
+                icon={<svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>}
+              />
+              <StatsCard title="Active Policies" value={stats.policies}
+                icon={<svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>}
+              />
+            </>
+          )}
         </div>
       )}
 

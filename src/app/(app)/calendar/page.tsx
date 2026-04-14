@@ -19,9 +19,9 @@ const EVENT_COLORS = [
   { value: '#0891b2', label: 'Cyan' },
 ]
 
-// 7:00 AM – 10:00 PM in 30-min steps (used for both events and room bookings)
+// 7:00 AM – 10:00 PM in 30-min steps
 const TIME_SLOTS = Array.from({ length: 31 }, (_, i) => {
-  const mins = 420 + i * 30 // start at 7:00
+  const mins = 420 + i * 30
   return `${String(Math.floor(mins / 60)).padStart(2, '0')}:${mins % 60 === 0 ? '00' : '30'}`
 })
 
@@ -43,18 +43,19 @@ export default function PlannerPage() {
   const [year, setYear] = useState(new Date().getFullYear())
   const [selectedDate, setSelectedDate] = useState<string | null>(null)
   const [activeForm, setActiveForm] = useState<'event' | 'booking' | null>(null)
+  const [exporting, setExporting] = useState(false)
 
   const [events, setEvents] = useState<CalendarEvent[]>([])
   const [leaves, setLeaves] = useState<Leave[]>([])
   const [bookings, setBookings] = useState<Booking[]>([])
+  const [allProfiles, setAllProfiles] = useState<{ id: string; name: string; department: string; role: string }[]>([])
 
   // Event form
   const [editingEvent, setEditingEvent] = useState<CalendarEvent | null>(null)
-  const [allProfiles, setAllProfiles] = useState<{ id: string; name: string; department: string }[]>([])
   const [formTitle, setFormTitle] = useState('')
   const [formDate, setFormDate] = useState('')
-  const [formTime, setFormTime] = useState('')
-  const [formEndTime, setFormEndTime] = useState('')
+  const [formTime, setFormTime] = useState('09:00')
+  const [formEndTime, setFormEndTime] = useState('10:00')
   const [formDesc, setFormDesc] = useState('')
   const [formColor, setFormColor] = useState('#4f46e5')
   const [formVisibility, setFormVisibility] = useState<'all' | 'department' | 'individual'>('all')
@@ -74,13 +75,13 @@ export default function PlannerPage() {
   const [bkError, setBkError] = useState('')
   const [bkSaving, setBkSaving] = useState(false)
 
+  const isMgmt = profile?.role === 'management'
   const isHrOrMgmt = profile && (profile.role === 'hr' || profile.role === 'management')
 
   useEffect(() => {
     if (profile) {
       loadMonthData()
-      // Load all profiles for attendee selection (needed for everyone, not just HR)
-      supabase.from('profiles').select('id, name, department').order('name')
+      supabase.from('profiles').select('id, name, department, role').order('name')
         .then(({ data }) => { if (data) setAllProfiles(data) })
     }
   }, [profile, month, year])
@@ -91,6 +92,7 @@ export default function PlannerPage() {
     const from = `${year}-${pad}-01`
     const to = `${year}-${pad}-31`
 
+    // Events: HR/Mgmt see all; staff see targeted-to-them only
     let evtQ = supabase.from('events').select('*').gte('date', from).lte('date', to).order('date')
     if (!isHrOrMgmt) {
       evtQ = evtQ.or(`visibility.eq.all,and(visibility.eq.department,target_department.eq.${profile.department}),and(visibility.eq.individual,target_user_ids.cs.{${profile.id}})`)
@@ -98,14 +100,14 @@ export default function PlannerPage() {
     const { data: evtData } = await evtQ
     if (evtData) setEvents(evtData as CalendarEvent[])
 
+    // Leaves: HR/Mgmt see all; staff see own only
     let leaveQ = supabase.from('leaves').select('*').or(`and(start_date.lte.${to},end_date.gte.${from})`)
     if (!isHrOrMgmt) leaveQ = leaveQ.eq('user_id', profile.id)
     const { data: leaveData } = await leaveQ
     if (leaveData) setLeaves(leaveData)
 
-    let bookQ = supabase.from('bookings').select('*').gte('date', from).lte('date', to)
-    if (!isHrOrMgmt) bookQ = bookQ.eq('user_id', profile.id)
-    const { data: bookData } = await bookQ
+    // Bookings: EVERYONE sees all bookings (room availability awareness)
+    const { data: bookData } = await supabase.from('bookings').select('*').gte('date', from).lte('date', to).order('start_time')
     if (bookData) setBookings(bookData)
   }
 
@@ -123,11 +125,29 @@ export default function PlannerPage() {
     return arr.filter(x => (x as { start_date: string }).start_date <= dateStr && (x as { end_date: string }).end_date >= dateStr)
   }
 
+  // ── Permission helpers ───────────────────────────────────────────────────
+  // Management: can modify ANY event
+  // HR: can modify own + staff events (NOT management events)
+  // Staff: can only modify own events (NOT hr/management events)
   function canModifyEvent(ev: CalendarEvent) {
     if (!profile) return false
-    if (isHrOrMgmt) return true
+    if (profile.role === 'management') return true
+    if (profile.role === 'hr') return ev.created_by_role !== 'management'
     if (ev.created_by_role === 'hr' || ev.created_by_role === 'management') return false
     return ev.created_by_id === profile.id
+  }
+
+  // Management: cancel any booking
+  // HR: cancel own + staff bookings (NOT bookings by management users)
+  // Staff: cancel own only
+  function canCancelBooking(b: Booking) {
+    if (!profile) return false
+    if (profile.role === 'management') return true
+    if (profile.role === 'hr') {
+      const booker = allProfiles.find(p => p.id === b.user_id)
+      return booker?.role !== 'management'
+    }
+    return b.user_id === profile.id
   }
 
   function getBookingConflicts() {
@@ -233,6 +253,93 @@ export default function PlannerPage() {
     loadMonthData()
   }
 
+  // ── PDF Export (HR & Management only) ───────────────────────────────────
+  async function exportPDF() {
+    setExporting(true)
+    try {
+      const { default: jsPDF } = await import('jspdf')
+      const { default: autoTable } = await import('jspdf-autotable')
+      const doc = new jsPDF({ orientation: 'landscape' })
+      const now = new Date().toLocaleDateString('en-MY', { day: 'numeric', month: 'long', year: 'numeric' })
+
+      doc.setFontSize(16); doc.setTextColor(10, 17, 40)
+      doc.text('AJIMINO SDN. BHD.', 14, 16)
+      doc.setFontSize(12); doc.setTextColor(60, 60, 60)
+      doc.text(`Planner — ${MONTHS[month]} ${year}`, 14, 24)
+      doc.setFontSize(9); doc.setTextColor(120, 120, 120)
+      doc.text(`Generated: ${now}`, 14, 30)
+
+      let curY = 36
+
+      // Events
+      doc.setFontSize(11); doc.setTextColor(10, 17, 40)
+      doc.text('Events', 14, curY)
+      autoTable(doc, {
+        startY: curY + 4,
+        head: [['Date', 'Title', 'Time', 'Visibility', 'Created By', 'Description']],
+        body: events.length > 0 ? events.map(ev => [
+          new Date(ev.date + 'T00:00:00').toLocaleDateString('en-MY', { day: 'numeric', month: 'short', year: 'numeric' }),
+          ev.title,
+          ev.event_time ? (formatTimeRange(ev.event_time, ev.event_end_time) || '') : 'Whole Day',
+          ev.visibility === 'all' ? 'All Staff' : ev.visibility === 'department' ? `Dept: ${ev.target_department}` : 'Individual',
+          ev.created_by,
+          ev.description || '',
+        ]) : [['—', 'No events this month', '', '', '', '']],
+        styles: { fontSize: 8, cellPadding: 2.5 },
+        headStyles: { fillColor: [10, 17, 40], textColor: 255, fontStyle: 'bold' },
+        alternateRowStyles: { fillColor: [248, 249, 251] },
+      })
+
+      curY = (doc as unknown as { lastAutoTable: { finalY: number } }).lastAutoTable.finalY + 10
+
+      // Leaves
+      doc.setFontSize(11); doc.setTextColor(10, 17, 40)
+      doc.text('Leaves', 14, curY)
+      const approvedLeaves = leaves.filter(l => l.status !== 'rejected')
+      autoTable(doc, {
+        startY: curY + 4,
+        head: [['Staff', 'Department', 'Type', 'Start', 'End', 'Days', 'Status', 'Approved By']],
+        body: approvedLeaves.length > 0 ? approvedLeaves.map(l => [
+          l.user_name, l.department,
+          l.type === 'Annual Leave' ? 'AL' : 'ML',
+          new Date(l.start_date + 'T00:00:00').toLocaleDateString('en-MY', { day: 'numeric', month: 'short' }),
+          new Date(l.end_date + 'T00:00:00').toLocaleDateString('en-MY', { day: 'numeric', month: 'short' }),
+          l.days.toString(),
+          l.status.charAt(0).toUpperCase() + l.status.slice(1),
+          l.approved_by || '—',
+        ]) : [['—', 'No leaves this month', '', '', '', '', '', '']],
+        styles: { fontSize: 8, cellPadding: 2.5 },
+        headStyles: { fillColor: [5, 150, 105], textColor: 255, fontStyle: 'bold' },
+        alternateRowStyles: { fillColor: [248, 249, 251] },
+      })
+
+      curY = (doc as unknown as { lastAutoTable: { finalY: number } }).lastAutoTable.finalY + 10
+
+      // Room Bookings
+      doc.setFontSize(11); doc.setTextColor(10, 17, 40)
+      doc.text('Room Bookings', 14, curY)
+      autoTable(doc, {
+        startY: curY + 4,
+        head: [['Date', 'Room', 'Time', 'Booked By', 'Department', 'Purpose', 'Attendees']],
+        body: bookings.length > 0 ? bookings.map(b => [
+          new Date(b.date + 'T00:00:00').toLocaleDateString('en-MY', { day: 'numeric', month: 'short', year: 'numeric' }),
+          ROOMS.find(r => r.id === b.room_id)?.name || b.room_id,
+          `${b.start_time.slice(0, 5)} – ${b.end_time.slice(0, 5)}`,
+          b.user_name, b.department, b.purpose,
+          b.attendee_names?.join(', ') || '—',
+        ]) : [['—', 'No bookings this month', '', '', '', '', '']],
+        styles: { fontSize: 8, cellPadding: 2.5 },
+        headStyles: { fillColor: [37, 99, 235], textColor: 255, fontStyle: 'bold' },
+        alternateRowStyles: { fillColor: [248, 249, 251] },
+      })
+
+      doc.save(`Planner_${year}_${String(month + 1).padStart(2, '0')}.pdf`)
+    } finally {
+      setExporting(false)
+    }
+  }
+
+  // ── Derived state ────────────────────────────────────────────────────────
   const todayStr = new Date().toISOString().split('T')[0]
   const daysInMonth = new Date(year, month + 1, 0).getDate()
   const firstDay = new Date(year, month, 1).getDay()
@@ -242,25 +349,30 @@ export default function PlannerPage() {
   const selBookings = selectedDate ? getForDate(bookings, selectedDate, 'date') : []
   const selHoliday = selectedDate ? isHoliday(selectedDate) : undefined
 
-  const monthEvents = events.length
-  const monthLeaves = leaves.filter(l => l.status === 'approved').length
-  const monthBookings = bookings.length
-
   const bkConflicts = activeForm === 'booking' ? getBookingConflicts() : []
 
   return (
     <>
-      {/* Header */}
+      {/* ── Header ────────────────────────────────────────────────────── */}
       <div className="flex items-center justify-between mb-6 gap-3 flex-wrap">
         <div>
           <h1 className="text-2xl font-bold text-slate-900">Planner</h1>
           <p className="text-slate-500 text-sm mt-1">
             {isHrOrMgmt
-              ? `${monthEvents} event(s) · ${monthLeaves} approved leave(s) · ${monthBookings} booking(s) this month`
+              ? `${events.length} event(s) · ${leaves.filter(l => l.status === 'approved').length} approved leave(s) · ${bookings.length} booking(s) this month`
               : 'Your schedule — events, leaves, and bookings'}
           </p>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
+          {/* Export: HR and Management only */}
+          {isHrOrMgmt && (
+            <button onClick={exportPDF} disabled={exporting}
+              className="flex items-center gap-2 border border-gray-200 bg-white hover:bg-slate-50 text-slate-700 font-semibold px-4 py-2.5 rounded-xl transition text-sm disabled:opacity-50">
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
+              {exporting ? 'Exporting...' : 'Export PDF'}
+            </button>
+          )}
+          {/* Manage Leaves: HR and Management */}
           {isHrOrMgmt && (
             <Link href="/leave"
               className="flex items-center gap-2 border border-gray-200 bg-white hover:bg-slate-50 text-slate-700 font-semibold px-4 py-2.5 rounded-xl transition text-sm">
@@ -268,32 +380,30 @@ export default function PlannerPage() {
               Manage Leaves
             </Link>
           )}
-          {profile?.role !== 'management' && (
+          {/* Apply Leave: HR and Staff (not Management) */}
+          {!isMgmt && (
             <Link href="/leave"
               className="flex items-center gap-2 border border-gray-200 bg-white hover:bg-slate-50 text-slate-700 font-semibold px-4 py-2.5 rounded-xl transition text-sm">
-              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" /></svg>
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" /></svg>
               Apply Leave
             </Link>
           )}
-          {profile && (
-            <button onClick={() => openBookingForm()}
-              className="flex items-center gap-2 border border-gray-200 bg-white hover:bg-slate-50 text-slate-700 font-semibold px-4 py-2.5 rounded-xl transition text-sm">
-              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
-              Book Room
-            </button>
-          )}
-          {profile && (
-            <button onClick={() => openAddEvent()}
-              className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold px-5 py-2.5 rounded-xl transition text-sm">
-              + Add Event
-            </button>
-          )}
+          <button onClick={() => openBookingForm()}
+            className="flex items-center gap-2 border border-gray-200 bg-white hover:bg-slate-50 text-slate-700 font-semibold px-4 py-2.5 rounded-xl transition text-sm">
+            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
+            Book Room
+          </button>
+          <button onClick={() => openAddEvent()}
+            className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold px-5 py-2.5 rounded-xl transition text-sm">
+            + Add Event
+          </button>
         </div>
       </div>
 
       <div className="flex flex-col xl:flex-row gap-6">
-        {/* Main calendar */}
-        <div className="flex-1 bg-white border border-gray-100 rounded-2xl p-5">
+        {/* ── Main calendar ───────────────────────────────────────────── */}
+        <div className="flex-1 bg-white border border-gray-100 rounded-2xl p-5 min-w-0">
+          {/* Month navigator */}
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-lg font-bold text-slate-900">{MONTHS[month]} {year}</h2>
             <div className="flex items-center gap-1">
@@ -309,7 +419,7 @@ export default function PlannerPage() {
           </div>
 
           {/* Legend */}
-          <div className="flex flex-wrap gap-3 text-xs mb-4">
+          <div className="flex flex-wrap gap-3 text-xs text-slate-500 mb-4">
             <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded bg-red-100 border border-red-200 inline-block" />Holiday</span>
             <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full bg-indigo-500 inline-block" />Event</span>
             <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded bg-emerald-100 inline-block" />Approved Leave</span>
@@ -317,15 +427,17 @@ export default function PlannerPage() {
             <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded bg-blue-100 inline-block" />Room Booking</span>
           </div>
 
+          {/* Day-of-week headers */}
           <div className="grid grid-cols-7 mb-1">
             {DAYS.map(d => (
               <div key={d} className="text-center text-[11px] font-semibold text-slate-400 py-1">{d}</div>
             ))}
           </div>
 
+          {/* Calendar grid */}
           <div className="grid grid-cols-7 gap-px bg-slate-100 rounded-xl overflow-hidden border border-slate-100">
             {Array.from({ length: firstDay }).map((_, i) => (
-              <div key={`e-${i}`} className="bg-slate-50 min-h-[80px] md:min-h-[100px]" />
+              <div key={`e-${i}`} className="bg-slate-50 min-h-[90px] md:min-h-[110px]" />
             ))}
             {Array.from({ length: daysInMonth }).map((_, i) => {
               const day = i + 1
@@ -338,51 +450,67 @@ export default function PlannerPage() {
               const dayLeaves = getForDate(leaves, dateStr, 'range')
               const dayBookings = getForDate(bookings, dateStr, 'date')
               const hasApproved = dayLeaves.some(l => l.status === 'approved')
-              const hasPending = dayLeaves.some(l => l.status === 'pending' && !hasApproved)
+              const hasPending = dayLeaves.some(l => l.status === 'pending')
               const hasBooking = dayBookings.length > 0
 
               return (
                 <div
                   key={day}
                   onClick={() => setSelectedDate(selectedDate === dateStr ? null : dateStr)}
-                  className={`bg-white min-h-[80px] md:min-h-[100px] p-1.5 cursor-pointer transition-all
-                    ${holiday ? 'bg-red-50' : hasApproved ? 'bg-emerald-50' : hasPending ? 'bg-amber-50' : hasBooking ? 'bg-blue-50' : ''}
+                  className={`bg-white min-h-[90px] md:min-h-[110px] p-1 cursor-pointer transition-all
+                    ${holiday ? '!bg-red-50' : ''}
+                    ${!holiday && hasApproved ? '!bg-emerald-50' : ''}
+                    ${!holiday && !hasApproved && hasPending ? '!bg-amber-50' : ''}
+                    ${!holiday && !hasApproved && !hasPending && hasBooking ? '!bg-blue-50' : ''}
                     ${isSelected ? 'ring-2 ring-inset ring-indigo-500' : 'hover:brightness-95'}
                   `}
                 >
-                  <div className={`text-xs font-bold w-6 h-6 flex items-center justify-center rounded-full
+                  {/* Date number */}
+                  <div className={`text-xs font-bold w-6 h-6 flex items-center justify-center rounded-full mb-0.5
                     ${isToday ? 'bg-indigo-600 text-white' : holiday ? 'text-red-600' : isWeekend ? 'text-slate-400' : 'text-slate-700'}
                   `}>
                     {day}
                   </div>
-                  {dayEvents.length > 0 && (
-                    <div className="flex gap-0.5 mt-1 flex-wrap">
-                      {dayEvents.slice(0, 3).map(ev => (
-                        <div key={ev.id} className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ backgroundColor: ev.color }} />
-                      ))}
-                      {dayEvents.length > 3 && <span className="text-[9px] text-slate-400">+{dayEvents.length - 3}</span>}
+
+                  {/* Holiday name */}
+                  {holiday && (
+                    <div className="text-[9px] text-red-500 font-semibold truncate leading-tight px-0.5 mb-0.5">
+                      {holiday.name.split('·')[0].trim().split(' ').slice(0, 3).join(' ')}
                     </div>
                   )}
-                  <div className="space-y-0.5 mt-1">
-                    {dayLeaves.slice(0, 2).map(l => (
-                      <div key={l.id} className={`text-[9px] font-medium truncate rounded px-1 leading-tight py-0.5 ${
-                        l.status === 'approved' ? 'bg-emerald-200 text-emerald-800' :
-                        l.status === 'rejected' ? 'bg-red-100 text-red-700' : 'bg-amber-100 text-amber-800'
-                      }`}>
-                        {isHrOrMgmt ? l.user_name.split(' ')[0] : l.type === 'Annual Leave' ? 'AL' : 'ML'}
-                      </div>
-                    ))}
-                    {dayLeaves.length > 2 && <div className="text-[9px] text-slate-400 px-1">+{dayLeaves.length - 2} more</div>}
-                  </div>
-                  {dayBookings.length > 0 && (
-                    <div className="mt-0.5">
-                      {dayBookings.slice(0, 1).map(b => (
-                        <div key={b.id} className="text-[9px] font-medium truncate rounded px-1 py-0.5 bg-blue-100 text-blue-700 leading-tight">
-                          {b.department}: {ROOMS.find(r => r.id === b.room_id)?.name.split(' ')[0] || b.room_id}
-                        </div>
-                      ))}
-                      {dayBookings.length > 1 && <div className="text-[9px] text-slate-400 px-1">+{dayBookings.length - 1} more</div>}
+
+                  {/* Events — show title with time */}
+                  {dayEvents.slice(0, 2).map(ev => (
+                    <div key={ev.id} className="text-[9px] font-medium truncate rounded px-1 py-0.5 leading-tight mb-0.5"
+                      style={{ backgroundColor: ev.color + '22', color: ev.color }}>
+                      {ev.event_time ? `${ev.event_time.slice(0, 5)} ` : ''}{ev.title}
                     </div>
+                  ))}
+                  {dayEvents.length > 2 && (
+                    <div className="text-[9px] text-slate-400 px-1">+{dayEvents.length - 2} event{dayEvents.length - 2 > 1 ? 's' : ''}</div>
+                  )}
+
+                  {/* Leaves — show first name for HR/Mgmt, AL/ML for staff */}
+                  {dayLeaves.slice(0, 2).map(l => (
+                    <div key={l.id} className={`text-[9px] font-medium truncate rounded px-1 leading-tight py-0.5 mb-0.5 ${
+                      l.status === 'approved' ? 'bg-emerald-200 text-emerald-800' :
+                      l.status === 'rejected' ? 'bg-red-100 text-red-700' : 'bg-amber-100 text-amber-800'
+                    }`}>
+                      {isHrOrMgmt ? l.user_name.split(' ')[0] : l.type === 'Annual Leave' ? 'AL' : 'ML'}
+                    </div>
+                  ))}
+                  {dayLeaves.length > 2 && (
+                    <div className="text-[9px] text-slate-400 px-1">+{dayLeaves.length - 2} leave{dayLeaves.length - 2 > 1 ? 's' : ''}</div>
+                  )}
+
+                  {/* Bookings — show room + time */}
+                  {dayBookings.slice(0, 2).map(b => (
+                    <div key={b.id} className="text-[9px] font-medium truncate rounded px-1 py-0.5 bg-blue-100 text-blue-700 leading-tight mb-0.5">
+                      {ROOMS.find(r => r.id === b.room_id)?.name.split(' ')[0] || '?'} {b.start_time.slice(0, 5)}
+                    </div>
+                  ))}
+                  {dayBookings.length > 2 && (
+                    <div className="text-[9px] text-slate-400 px-1">+{dayBookings.length - 2} room</div>
                   )}
                 </div>
               )
@@ -390,8 +518,10 @@ export default function PlannerPage() {
           </div>
         </div>
 
-        {/* Right panel */}
+        {/* ── Right panel ─────────────────────────────────────────────── */}
         <div className="xl:w-80 flex-shrink-0 space-y-4">
+
+          {/* Day detail panel */}
           {selectedDate ? (
             <div className="bg-white border border-gray-100 rounded-2xl p-5">
               <div className="flex items-center justify-between mb-4">
@@ -403,35 +533,49 @@ export default function PlannerPage() {
                 </button>
               </div>
 
+              {/* Holiday */}
               {selHoliday && (
-                <div className="flex items-center gap-2 p-3 bg-red-50 border border-red-100 rounded-xl mb-3">
-                  <div className="w-2 h-2 rounded-full bg-red-500 flex-shrink-0" />
+                <div className="flex items-start gap-2.5 p-3 bg-red-50 border border-red-100 rounded-xl mb-3">
+                  <div className="w-2 h-2 rounded-full bg-red-500 flex-shrink-0 mt-1" />
                   <div>
                     <p className="text-xs font-semibold text-red-700">{selHoliday.name}</p>
-                    <p className="text-[10px] text-red-400">Public Holiday</p>
+                    <p className="text-[10px] text-red-400 mt-0.5">Public Holiday</p>
                   </div>
                 </div>
               )}
 
+              {/* Events */}
               {selEvents.length > 0 && (
                 <div className="mb-3">
-                  <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wide mb-2">Events</p>
+                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2">Events</p>
                   <div className="space-y-2">
                     {selEvents.map(ev => (
-                      <div key={ev.id} className="flex items-start gap-2 p-3 bg-slate-50 rounded-xl">
+                      <div key={ev.id} className="flex items-start gap-2.5 p-3 bg-slate-50 rounded-xl border border-slate-100">
                         <div className="w-2.5 h-2.5 rounded-full flex-shrink-0 mt-0.5" style={{ backgroundColor: ev.color }} />
                         <div className="flex-1 min-w-0">
-                          <p className="text-xs font-semibold text-slate-900 truncate">{ev.title}</p>
-                          {ev.event_time && <p className="text-[10px] text-indigo-600 font-medium">{formatTimeRange(ev.event_time, ev.event_end_time)}</p>}
-                          {ev.description && <p className="text-[10px] text-slate-500 mt-0.5 line-clamp-2">{ev.description}</p>}
-                          <p className="text-[10px] text-slate-400 mt-0.5">by {ev.created_by}</p>
+                          <p className="text-xs font-semibold text-slate-900">{ev.title}</p>
+                          {ev.event_time && (
+                            <p className="text-[10px] text-indigo-600 font-medium mt-0.5">
+                              {formatTimeRange(ev.event_time, ev.event_end_time)}
+                            </p>
+                          )}
+                          {ev.description && (
+                            <p className="text-[10px] text-slate-500 mt-0.5 line-clamp-2">{ev.description}</p>
+                          )}
+                          <p className="text-[10px] text-slate-400 mt-0.5">
+                            {ev.visibility === 'all' ? 'All staff' : ev.visibility === 'department' ? `${ev.target_department} dept` : 'Specific staff'} · by {ev.created_by}
+                          </p>
                         </div>
                         {canModifyEvent(ev) && (
                           <div className="flex gap-1 flex-shrink-0">
-                            <button onClick={() => openEditEvent(ev)} className="p-1 hover:bg-indigo-50 rounded text-slate-400 hover:text-indigo-600 transition">
+                            <button onClick={() => openEditEvent(ev)}
+                              className="p-1.5 hover:bg-indigo-50 rounded-lg text-slate-400 hover:text-indigo-600 transition"
+                              title="Edit">
                               <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>
                             </button>
-                            <button onClick={() => handleDeleteEvent(ev.id)} className="p-1 hover:bg-red-50 rounded text-slate-400 hover:text-red-500 transition">
+                            <button onClick={() => handleDeleteEvent(ev.id)}
+                              className="p-1.5 hover:bg-red-50 rounded-lg text-slate-400 hover:text-red-500 transition"
+                              title="Delete">
                               <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
                             </button>
                           </div>
@@ -442,9 +586,10 @@ export default function PlannerPage() {
                 </div>
               )}
 
+              {/* Leaves */}
               {selLeaves.length > 0 && (
                 <div className="mb-3">
-                  <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wide mb-2">Leaves</p>
+                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2">Leaves</p>
                   <div className="space-y-2">
                     {selLeaves.map(l => (
                       <div key={l.id} className={`p-3 rounded-xl border ${
@@ -455,7 +600,7 @@ export default function PlannerPage() {
                           <p className="text-xs font-semibold text-slate-900">
                             {isHrOrMgmt ? l.user_name : l.type === 'Annual Leave' ? 'Annual Leave' : 'Medical Leave'}
                           </p>
-                          <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${
+                          <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
                             l.status === 'approved' ? 'bg-emerald-200 text-emerald-800' :
                             l.status === 'rejected' ? 'bg-red-200 text-red-800' : 'bg-amber-200 text-amber-800'
                           }`}>{l.status}</span>
@@ -469,11 +614,11 @@ export default function PlannerPage() {
                         {isHrOrMgmt && l.status === 'pending' && (
                           <div className="flex gap-2 mt-2">
                             <button onClick={() => handleLeaveApproval(l, 'approved')}
-                              className="flex-1 py-1 bg-emerald-100 text-emerald-700 text-[10px] font-semibold rounded-lg hover:bg-emerald-200 transition">
+                              className="flex-1 py-1 bg-emerald-100 text-emerald-700 text-[10px] font-bold rounded-lg hover:bg-emerald-200 transition">
                               Approve
                             </button>
                             <button onClick={() => handleLeaveApproval(l, 'rejected')}
-                              className="flex-1 py-1 bg-red-100 text-red-600 text-[10px] font-semibold rounded-lg hover:bg-red-200 transition">
+                              className="flex-1 py-1 bg-red-100 text-red-600 text-[10px] font-bold rounded-lg hover:bg-red-200 transition">
                               Reject
                             </button>
                           </div>
@@ -484,28 +629,32 @@ export default function PlannerPage() {
                 </div>
               )}
 
+              {/* Room Bookings */}
               {selBookings.length > 0 && (
                 <div className="mb-3">
-                  <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wide mb-2">Room Bookings</p>
+                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2">Room Bookings</p>
                   <div className="space-y-2">
                     {selBookings.map(b => {
                       const room = ROOMS.find(r => r.id === b.room_id)
                       return (
                         <div key={b.id} className="p-3 bg-blue-50 border border-blue-100 rounded-xl">
-                          <div className="flex items-center justify-between">
-                            <p className="text-xs font-semibold text-slate-900">{room?.name || b.room_id}</p>
-                            {(profile && b.user_id === profile.id) && (
+                          <div className="flex items-center justify-between mb-1">
+                            <div className="flex items-center gap-2">
+                              <div className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: room?.color || '#3b82f6' }} />
+                              <p className="text-xs font-semibold text-slate-900">{room?.name || b.room_id}</p>
+                            </div>
+                            {canCancelBooking(b) && (
                               <button onClick={() => handleCancelBooking(b.id)}
-                                className="text-[10px] text-red-500 hover:text-red-700 font-medium transition">
+                                className="text-[10px] text-red-500 hover:text-red-700 font-semibold transition">
                                 Cancel
                               </button>
                             )}
                           </div>
-                          <p className="text-[10px] text-slate-500 mt-0.5">{b.user_name} · {b.department}</p>
-                          <p className="text-[10px] text-blue-600 font-medium mt-0.5">
-                            {b.start_time.slice(0, 5)} – {b.end_time.slice(0, 5)}
+                          <p className="text-[10px] text-blue-600 font-bold">
+                            {formatTimeRange(b.start_time.slice(0, 5), b.end_time.slice(0, 5))}
                           </p>
-                          {b.purpose && <p className="text-[10px] text-slate-600 mt-0.5">{b.purpose}</p>}
+                          <p className="text-[10px] text-slate-600 mt-0.5">{b.user_name} · {b.department}</p>
+                          {b.purpose && <p className="text-[10px] text-slate-500 mt-0.5">{b.purpose}</p>}
                           {b.attendee_names && b.attendee_names.length > 0 && (
                             <div className="mt-1.5 flex flex-wrap gap-1">
                               {b.attendee_names.map((name, i) => (
@@ -523,26 +672,25 @@ export default function PlannerPage() {
               )}
 
               {!selHoliday && selEvents.length === 0 && selLeaves.length === 0 && selBookings.length === 0 && (
-                <p className="text-sm text-slate-400 text-center py-4">Nothing scheduled</p>
+                <p className="text-sm text-slate-400 text-center py-6">Nothing scheduled</p>
               )}
 
-              {profile && (
-                <div className="flex gap-2 mt-3">
-                  <button onClick={() => openAddEvent(selectedDate)}
-                    className="flex-1 px-3 py-2 bg-indigo-50 text-indigo-600 text-xs font-semibold rounded-xl hover:bg-indigo-100 transition">
-                    + Event
-                  </button>
-                  <button onClick={() => openBookingForm(selectedDate)}
-                    className="flex-1 px-3 py-2 bg-blue-50 text-blue-600 text-xs font-semibold rounded-xl hover:bg-blue-100 transition">
-                    + Book Room
-                  </button>
-                </div>
-              )}
+              {/* Quick add buttons */}
+              <div className="flex gap-2 mt-3 pt-3 border-t border-gray-100">
+                <button onClick={() => openAddEvent(selectedDate)}
+                  className="flex-1 px-3 py-2 bg-indigo-50 text-indigo-600 text-xs font-semibold rounded-xl hover:bg-indigo-100 transition">
+                  + Event
+                </button>
+                <button onClick={() => openBookingForm(selectedDate)}
+                  className="flex-1 px-3 py-2 bg-blue-50 text-blue-600 text-xs font-semibold rounded-xl hover:bg-blue-100 transition">
+                  + Book Room
+                </button>
+              </div>
             </div>
           ) : (
             <div className="bg-white border border-gray-100 rounded-2xl p-5">
               <p className="text-sm font-semibold text-slate-700 mb-1">Select a day</p>
-              <p className="text-xs text-slate-400">Click any date to see events, leaves, and bookings.</p>
+              <p className="text-xs text-slate-400">Click any date to view and manage events, leaves, and bookings.</p>
             </div>
           )}
 
@@ -552,7 +700,7 @@ export default function PlannerPage() {
             <div className="space-y-2">
               {SELANGOR_HOLIDAYS
                 .filter(h => h.date >= new Date().toISOString().split('T')[0])
-                .slice(0, 4)
+                .slice(0, 5)
                 .map(h => (
                   <div key={h.date + h.name} className="flex items-center gap-3">
                     <div className="w-9 h-9 rounded-lg bg-red-50 flex items-center justify-center flex-shrink-0">
@@ -561,7 +709,7 @@ export default function PlannerPage() {
                     <div className="min-w-0">
                       <p className="text-xs font-semibold text-slate-800 truncate">{h.name}</p>
                       <p className="text-[10px] text-slate-400">
-                        {new Date(h.date + 'T00:00:00').toLocaleDateString('en-MY', { weekday: 'short', month: 'short', year: 'numeric' })}
+                        {new Date(h.date + 'T00:00:00').toLocaleDateString('en-MY', { weekday: 'short', day: 'numeric', month: 'short' })}
                       </p>
                     </div>
                   </div>
@@ -569,12 +717,12 @@ export default function PlannerPage() {
             </div>
           </div>
 
-          {/* Room legend */}
+          {/* Meeting rooms info */}
           <div className="bg-white border border-gray-100 rounded-2xl p-5">
             <h3 className="text-sm font-bold text-slate-900 mb-3">Meeting Rooms</h3>
-            <div className="space-y-2">
+            <div className="space-y-2.5">
               {ROOMS.map(room => (
-                <div key={room.id} className="flex items-center gap-3">
+                <div key={room.id} className="flex items-center gap-3 p-2.5 rounded-xl bg-slate-50">
                   <div className="w-3 h-3 rounded-full flex-shrink-0" style={{ backgroundColor: room.color }} />
                   <div>
                     <p className="text-xs font-semibold text-slate-800">{room.name}</p>
@@ -587,10 +735,10 @@ export default function PlannerPage() {
         </div>
       </div>
 
-      {/* Event Form Modal */}
+      {/* ── Event Form Modal ──────────────────────────────────────────── */}
       {activeForm === 'event' && (
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 px-4">
-          <div className="bg-white rounded-2xl p-6 w-full max-w-md max-h-[90vh] overflow-y-auto">
+          <div className="bg-white rounded-2xl p-6 w-full max-w-md max-h-[90vh] overflow-y-auto shadow-2xl">
             <div className="flex items-center justify-between mb-5">
               <h2 className="text-lg font-bold text-slate-900">{editingEvent ? 'Edit Event' : 'Add Event'}</h2>
               <button onClick={closeForm} className="text-slate-400 hover:text-slate-600">
@@ -612,8 +760,7 @@ export default function PlannerPage() {
                 <label className="block text-sm font-medium text-slate-700 mb-2">Time</label>
                 <div className="flex gap-2 mb-3">
                   {(['allday', 'custom'] as const).map(mode => (
-                    <button key={mode} type="button"
-                      onClick={() => setFormTimeMode(mode)}
+                    <button key={mode} type="button" onClick={() => setFormTimeMode(mode)}
                       className={`flex-1 py-2 rounded-xl text-xs font-semibold border transition ${formTimeMode === mode ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-slate-600 border-gray-200 hover:border-indigo-300'}`}>
                       {mode === 'allday' ? 'Whole Day' : 'Custom Time'}
                     </button>
@@ -639,14 +786,15 @@ export default function PlannerPage() {
                 )}
               </div>
               <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">Description <span className="text-slate-400 font-normal">(opt)</span></label>
+                <label className="block text-sm font-medium text-slate-700 mb-1">Description <span className="text-slate-400 font-normal">(optional)</span></label>
                 <textarea value={formDesc} onChange={e => setFormDesc(e.target.value)} rows={2}
                   className="w-full px-3 py-2.5 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 resize-none" />
               </div>
+              {/* Visibility: only HR/Mgmt can set; staff events default to All */}
               {isHrOrMgmt ? (
                 <div>
                   <label className="block text-sm font-medium text-slate-700 mb-1">Visible To</label>
-                  <div className="flex gap-2">
+                  <div className="flex gap-2 mb-2">
                     {(['all', 'department', 'individual'] as const).map(v => (
                       <button key={v} type="button" onClick={() => { setFormVisibility(v); setFormDept(''); setFormUserIds([]) }}
                         className={`flex-1 py-2 rounded-xl text-xs font-semibold border transition ${formVisibility === v ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-slate-600 border-gray-200 hover:border-indigo-300'}`}>
@@ -654,36 +802,32 @@ export default function PlannerPage() {
                       </button>
                     ))}
                   </div>
+                  {formVisibility === 'department' && (
+                    <select value={formDept} onChange={e => setFormDept(e.target.value)} required
+                      className="w-full px-3 py-2.5 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                      <option value="">Choose department...</option>
+                      {['Management', 'HR', 'Sales', 'Operations', 'Marketing'].map(d => <option key={d} value={d}>{d}</option>)}
+                    </select>
+                  )}
+                  {formVisibility === 'individual' && (
+                    <div className="border border-gray-200 rounded-xl max-h-40 overflow-y-auto divide-y divide-gray-50">
+                      {allProfiles.map(p => (
+                        <label key={p.id} className="flex items-center gap-3 px-3 py-2 hover:bg-slate-50 cursor-pointer">
+                          <input type="checkbox" checked={formUserIds.includes(p.id)}
+                            onChange={() => setFormUserIds(prev => prev.includes(p.id) ? prev.filter(x => x !== p.id) : [...prev, p.id])}
+                            className="rounded accent-indigo-600" />
+                          <div>
+                            <p className="text-sm font-medium text-slate-800">{p.name}</p>
+                            <p className="text-xs text-slate-400">{p.department}</p>
+                          </div>
+                        </label>
+                      ))}
+                    </div>
+                  )}
                 </div>
               ) : (
                 <div className="px-3 py-2 bg-slate-50 rounded-xl text-xs text-slate-500">
                   Visible to: <span className="font-semibold text-slate-700">All Staff</span>
-                </div>
-              )}
-              {formVisibility === 'department' && (
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">Department</label>
-                  <select value={formDept} onChange={e => setFormDept(e.target.value)} required
-                    className="w-full px-3 py-2.5 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
-                    <option value="">Choose...</option>
-                    {['Management', 'HR', 'Sales', 'Operations', 'Marketing'].map(d => <option key={d} value={d}>{d}</option>)}
-                  </select>
-                </div>
-              )}
-              {formVisibility === 'individual' && (
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">Select Staff</label>
-                  <div className="border border-gray-200 rounded-xl max-h-40 overflow-y-auto divide-y divide-gray-50">
-                    {allProfiles.map(p => (
-                      <label key={p.id} className="flex items-center gap-3 px-3 py-2 hover:bg-slate-50 cursor-pointer">
-                        <input type="checkbox" checked={formUserIds.includes(p.id)} onChange={() => setFormUserIds(prev => prev.includes(p.id) ? prev.filter(x => x !== p.id) : [...prev, p.id])} className="rounded accent-indigo-600" />
-                        <div>
-                          <p className="text-sm font-medium text-slate-800">{p.name}</p>
-                          <p className="text-xs text-slate-400">{p.department}</p>
-                        </div>
-                      </label>
-                    ))}
-                  </div>
                 </div>
               )}
               <div>
@@ -691,7 +835,7 @@ export default function PlannerPage() {
                 <div className="flex gap-2">
                   {EVENT_COLORS.map(c => (
                     <button key={c.value} type="button" onClick={() => setFormColor(c.value)}
-                      className={`w-8 h-8 rounded-full transition ${formColor === c.value ? 'ring-2 ring-offset-2 ring-slate-400' : ''}`}
+                      className={`w-8 h-8 rounded-full transition ${formColor === c.value ? 'ring-2 ring-offset-2 ring-slate-400 scale-110' : 'hover:scale-110'}`}
                       style={{ backgroundColor: c.value }} />
                   ))}
                 </div>
@@ -706,10 +850,10 @@ export default function PlannerPage() {
         </div>
       )}
 
-      {/* Booking Form Modal */}
+      {/* ── Booking Form Modal ────────────────────────────────────────── */}
       {activeForm === 'booking' && (
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 px-4">
-          <div className="bg-white rounded-2xl p-6 w-full max-w-md max-h-[90vh] overflow-y-auto">
+          <div className="bg-white rounded-2xl p-6 w-full max-w-md max-h-[90vh] overflow-y-auto shadow-2xl">
             <div className="flex items-center justify-between mb-5">
               <h2 className="text-lg font-bold text-slate-900">Book a Room</h2>
               <button onClick={closeForm} className="text-slate-400 hover:text-slate-600">
@@ -724,34 +868,41 @@ export default function PlannerPage() {
               </div>
               <div>
                 <label className="block text-sm font-medium text-slate-700 mb-1">Room</label>
-                <select value={bkRoom} onChange={e => setBkRoom(e.target.value)}
-                  className="w-full px-3 py-2.5 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                <div className="space-y-2">
                   {ROOMS.map(r => (
-                    <option key={r.id} value={r.id}>{r.name} — capacity {r.capacity} pax</option>
+                    <label key={r.id} className={`flex items-center gap-3 p-3 rounded-xl border-2 cursor-pointer transition ${bkRoom === r.id ? 'border-indigo-500 bg-indigo-50' : 'border-gray-200 hover:border-gray-300'}`}>
+                      <input type="radio" name="room" value={r.id} checked={bkRoom === r.id}
+                        onChange={() => setBkRoom(r.id)} className="accent-indigo-600" />
+                      <div className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: r.color }} />
+                      <div>
+                        <p className="text-sm font-semibold text-slate-800">{r.name}</p>
+                        <p className="text-xs text-slate-400">Capacity: {r.capacity} pax</p>
+                      </div>
+                    </label>
                   ))}
-                </select>
+                </div>
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block text-sm font-medium text-slate-700 mb-1">Start Time</label>
                   <select value={bkStart} onChange={e => setBkStart(e.target.value)}
                     className="w-full px-3 py-2.5 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
-                    {TIME_SLOTS.map(t => <option key={t} value={t}>{t}</option>)}
+                    {TIME_SLOTS.map(t => <option key={t} value={t}>{formatTime(t)}</option>)}
                   </select>
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-slate-700 mb-1">End Time</label>
                   <select value={bkEnd} onChange={e => setBkEnd(e.target.value)}
                     className="w-full px-3 py-2.5 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
-                    {TIME_SLOTS.map(t => <option key={t} value={t}>{t}</option>)}
+                    {TIME_SLOTS.map(t => <option key={t} value={t}>{formatTime(t)}</option>)}
                   </select>
                 </div>
               </div>
               {bkConflicts.length > 0 && (
                 <div className="bg-amber-50 border border-amber-200 rounded-xl p-3">
-                  <p className="text-xs font-semibold text-amber-700 mb-1">Conflict with existing booking:</p>
+                  <p className="text-xs font-semibold text-amber-700 mb-1">Conflicts with existing booking:</p>
                   {bkConflicts.map(c => (
-                    <p key={c.id} className="text-xs text-amber-600">{c.start_time.slice(0,5)}–{c.end_time.slice(0,5)} by {c.user_name} — {c.purpose}</p>
+                    <p key={c.id} className="text-xs text-amber-600">{c.start_time.slice(0, 5)}–{c.end_time.slice(0, 5)} · {c.user_name} — {c.purpose}</p>
                   ))}
                 </div>
               )}

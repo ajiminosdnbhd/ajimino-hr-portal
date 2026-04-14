@@ -34,18 +34,21 @@ export function ProfileProvider({ children }: { children: React.ReactNode }) {
         // cookies are persistent and don't get wiped on browser close.
         const res = await fetch('/api/profile', { credentials: 'include' })
         if (res.ok) {
-          const { profile: data, access_token, refresh_token } = await res.json()
+          const json = await res.json()
+          const { profile: data, access_token, refresh_token } = json
           if (mounted && data) {
-            setProfile(data as Profile)
             // Restore the session into the browser client memory so ALL
             // subsequent Supabase queries (leaves, stats, bookings, etc.)
             // include the Authorization header and pass RLS checks.
             if (access_token && refresh_token) {
               await supabase.auth.setSession({ access_token, refresh_token })
             }
+            setProfile(data as Profile)
             setLoading(false)
             return
           }
+        } else {
+          console.warn('Profile API returned', res.status)
         }
       } catch (err) {
         console.error('Profile API error:', err)
