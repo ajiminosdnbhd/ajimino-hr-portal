@@ -17,24 +17,24 @@ const BUILD_ID = process.env.NEXT_PUBLIC_BUILD_ID ?? 'dev'
  *
  * 2. New deployment while tab is open — JS chunks referenced by the old
  *    HTML no longer exist on the CDN → 404 → hydration fails.
- *    Fix: on every tab focus, call /api/version; if the live buildId
- *    differs from the one stamped into this bundle, hard-reload.
+ *    Fix: on mount AND every tab focus, call /api/version; if the live
+ *    buildId differs from the one stamped into this bundle, hard-reload.
  *
  * 3. ChunkLoadError / script 404 — same deployment mismatch caught via
  *    error events and unhandled promise rejections.
  *    Fix: reload immediately.
+ *
+ * 4. Mobile browser disk cache — mobile browsers (iOS Safari, Android
+ *    Chrome) may serve a cached page from disk when reopening the browser.
+ *    The no-store headers prevent this in theory, but some browsers ignore
+ *    them. Running checkVersion() on mount catches this: the cached bundle
+ *    has the old BUILD_ID, the server returns the new one → reload.
  */
 export default function AppGuard() {
   useEffect(() => {
-    // ── 1. bfcache restore ────────────────────────────────────────────────
-    const handlePageShow = (e: PageTransitionEvent) => {
-      if (e.persisted) window.location.reload()
-    }
-    window.addEventListener('pageshow', handlePageShow)
-
-    // ── 2. Deployment version check on tab focus ──────────────────────────
     let checking = false
-    const checkVersion = async () => {
+
+    async function checkVersion() {
       if (checking || BUILD_ID === 'dev') return
       checking = true
       try {
@@ -49,6 +49,17 @@ export default function AppGuard() {
       finally { checking = false }
     }
 
+    // ── 1. bfcache restore ────────────────────────────────────────────────
+    const handlePageShow = (e: PageTransitionEvent) => {
+      if (e.persisted) window.location.reload()
+    }
+    window.addEventListener('pageshow', handlePageShow)
+
+    // ── 2. Check on mount (catches mobile disk-cached pages) ─────────────
+    // Small delay so the page renders before a potential reload.
+    const mountTimer = setTimeout(checkVersion, 1500)
+
+    // ── 2b. Check on every tab focus ─────────────────────────────────────
     const handleVisibilityChange = () => {
       if (document.visibilityState === 'visible') checkVersion()
     }
@@ -70,6 +81,7 @@ export default function AppGuard() {
     window.addEventListener('unhandledrejection', handleUnhandledRejection)
 
     return () => {
+      clearTimeout(mountTimer)
       window.removeEventListener('pageshow', handlePageShow)
       document.removeEventListener('visibilitychange', handleVisibilityChange)
       window.removeEventListener('error', handleScriptError, true)

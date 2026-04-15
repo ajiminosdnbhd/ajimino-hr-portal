@@ -21,11 +21,17 @@ const nextConfig = {
   async headers() {
     return [
       {
-        // Don't cache HTML pages — always fetch fresh
+        // HTML pages — never cache, always revalidate with the server.
+        // Covers mobile browsers (iOS Safari, Android Chrome) that aggressively
+        // disk-cache pages even when closing/reopening the browser.
         source: '/((?!_next/static|_next/image|favicon\\.ico).*)',
         headers: [
-          { key: 'Cache-Control', value: 'no-cache, no-store, must-revalidate' },
+          { key: 'Cache-Control', value: 'no-cache, no-store, must-revalidate, max-age=0' },
           { key: 'Pragma', value: 'no-cache' },
+          { key: 'Expires', value: '0' },
+          // Tells Vercel Edge not to serve from its own cache
+          { key: 'CDN-Cache-Control', value: 'no-store' },
+          { key: 'Vercel-CDN-Cache-Control', value: 'no-store' },
         ],
       },
     ]
