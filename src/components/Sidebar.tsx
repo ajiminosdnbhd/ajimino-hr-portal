@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import Image from 'next/image'
 import { usePathname } from 'next/navigation'
@@ -92,6 +92,9 @@ const NAV_ITEMS = [
 export default function Sidebar({ profile }: { profile: Profile | null }) {
   const pathname = usePathname()
   const [moreOpen, setMoreOpen] = useState(false)
+
+  // Close the More popup whenever the route changes (handles back button too)
+  useEffect(() => { setMoreOpen(false) }, [pathname])
 
   const handleLogout = async () => {
     try {
@@ -251,6 +254,7 @@ export default function Sidebar({ profile }: { profile: Profile | null }) {
             <Link
               key={item.href}
               href={item.href}
+              onClick={() => setMoreOpen(false)}
               className="flex-1 flex flex-col items-center justify-center py-2.5 gap-1"
               style={isActive ? { color: '#818CF8' } : { color: 'rgba(255,255,255,0.4)' }}
             >
