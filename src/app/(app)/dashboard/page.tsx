@@ -27,6 +27,7 @@ export default function DashboardPage() {
       loadUpcomingEvents()
       loadRecentAnnouncements()
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [profile])
 
   async function loadStats() {

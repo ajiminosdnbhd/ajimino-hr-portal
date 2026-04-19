@@ -75,6 +75,7 @@ export default function PlannerPage() {
 
   useEffect(() => {
     if (profile) loadMonthData()
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [profile, month, year])
 
   async function loadMonthData() {
@@ -724,8 +725,8 @@ export default function PlannerPage() {
                     ${isSelected ? 'ring-2 ring-inset ring-indigo-500' : 'hover:brightness-95'}
                   `}
                 >
-                  {/* Date number */}
-                  <div className={`text-xs font-bold w-6 h-6 flex items-center justify-center rounded-full mb-0.5
+                  {/* Date number — min 28×28 for touch accessibility */}
+                  <div className={`text-xs font-bold w-7 h-7 flex items-center justify-center rounded-full mb-0.5
                     ${isToday ? 'bg-indigo-600 text-white' : holiday ? 'text-red-600' : isWeekend ? 'text-slate-400' : 'text-slate-700'}
                   `}>
                     {day}

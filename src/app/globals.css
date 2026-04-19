@@ -9,7 +9,7 @@
 }
 
 body {
-  font-family: 'Outfit', sans-serif;
+  font-family: var(--font-outfit), 'Outfit', sans-serif;
   background: #f8fafc;
   color: #1e293b;
 }
@@ -28,5 +28,5 @@ body {
 }
 
 input, select, textarea {
-  font-family: 'Outfit', sans-serif;
+  font-family: var(--font-outfit), 'Outfit', sans-serif;
 }

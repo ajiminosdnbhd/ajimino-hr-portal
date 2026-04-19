@@ -38,6 +38,7 @@ export default function PayslipsPage() {
           .then(({ data }) => setAllProfiles(data))
       }
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [profile, filterYear])
 
   async function loadPayslips() {

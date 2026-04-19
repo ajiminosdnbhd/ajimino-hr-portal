@@ -60,6 +60,7 @@ export default function AnnouncementsPage() {
       loadAnnouncements()
       if (isHrOrMgmt) loadAllProfiles()
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [profile])
 
   async function loadAnnouncements() {

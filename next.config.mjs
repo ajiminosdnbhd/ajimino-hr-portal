@@ -18,6 +18,10 @@ const nextConfig = {
   compress: true,
   // Power by header removal (minor security + performance)
   poweredByHeader: false,
+  // Tree-shake large packages — only import what's actually used
+  experimental: {
+    optimizePackageImports: ['jspdf', 'jspdf-autotable'],
+  },
   async headers() {
     return [
       {

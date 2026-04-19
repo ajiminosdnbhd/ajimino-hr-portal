@@ -22,7 +22,7 @@ export default function PoliciesPage() {
   const [saving, setSaving] = useState(false)
   const [allDepts, setAllDepts] = useState(true)
 
-  useEffect(() => { if (profile) loadPolicies() }, [profile])
+  useEffect(() => { if (profile) loadPolicies() }, [profile]) // eslint-disable-line react-hooks/exhaustive-deps
 
   async function loadPolicies() {
     if (!profile) return

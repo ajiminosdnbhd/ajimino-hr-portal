@@ -1,133 +1,133 @@
 // AJIMINO HR — Service Worker
 // Strategy:
-//   • Static assets (_next/static, icons, fonts) → Cache-First
-//   • Navigation requests (HTML pages)           → Network-First with offline fallback
-//   • API routes                                 → Network-Only (never cache)
+//   Static assets (_next/static, icons)  → Cache-First (long-lived, hashed)
+//   Google Fonts stylesheet / woff2      → Cache-First (1-year TTL)
+//   Navigation (HTML pages)             → Network-First + offline fallback
+//   API routes / Supabase               → Network-Only (never cache auth data)
 
-const CACHE_VERSION = 'v1';
-const STATIC_CACHE  = `ajimino-static-${CACHE_VERSION}`;
-const DYNAMIC_CACHE = `ajimino-dynamic-${CACHE_VERSION}`;
+const CACHE_VERSION = 'v3'
+const STATIC_CACHE  = `ajimino-static-${CACHE_VERSION}`
+const DYNAMIC_CACHE = `ajimino-dynamic-${CACHE_VERSION}`
+const FONT_CACHE    = `ajimino-fonts-${CACHE_VERSION}`
+const OFFLINE_URL   = '/offline.html'
 
-const OFFLINE_URL   = '/offline.html';
-
-// Core assets to pre-cache on install
 const PRECACHE_ASSETS = [
   '/offline.html',
   '/manifest.json',
   '/icons/icon-192x192.png',
   '/icons/icon-512x512.png',
   '/icons/icon-maskable-192x192.png',
-];
+]
 
 // ─── Install ────────────────────────────────────────────────────────────────
 self.addEventListener('install', event => {
   event.waitUntil(
-    caches.open(STATIC_CACHE).then(cache => cache.addAll(PRECACHE_ASSETS))
-  );
-  // Activate new SW immediately without waiting for old tabs to close
-  self.skipWaiting();
-});
+    caches.open(STATIC_CACHE)
+      .then(cache => cache.addAll(PRECACHE_ASSETS))
+      .then(() => self.skipWaiting())
+  )
+})
 
 // ─── Activate ───────────────────────────────────────────────────────────────
 self.addEventListener('activate', event => {
+  const KEEP = [STATIC_CACHE, DYNAMIC_CACHE, FONT_CACHE]
   event.waitUntil(
-    caches.keys().then(keys =>
-      Promise.all(
-        keys
-          .filter(k => k !== STATIC_CACHE && k !== DYNAMIC_CACHE)
-          .map(k => caches.delete(k))
-      )
-    ).then(() => self.clients.claim())
-  );
-});
+    caches.keys()
+      .then(keys => Promise.all(keys.filter(k => !KEEP.includes(k)).map(k => caches.delete(k))))
+      .then(() => self.clients.claim())
+  )
+})
 
 // ─── Fetch ──────────────────────────────────────────────────────────────────
 self.addEventListener('fetch', event => {
-  const { request } = event;
-  const url = new URL(request.url);
+  const { request } = event
+  const url = new URL(request.url)
 
-  // 1. Ignore non-GET and cross-origin requests
-  if (request.method !== 'GET' || url.origin !== self.location.origin) return;
+  // Only handle GET
+  if (request.method !== 'GET') return
 
-  // 2. Never cache API routes or Supabase calls
-  if (url.pathname.startsWith('/api/') || url.hostname.includes('supabase')) return;
-
-  // 3. Cache-First for static assets (_next/static, fonts, icons)
+  // Never intercept API routes or Supabase (auth-sensitive, always fresh)
   if (
-    url.pathname.startsWith('/_next/static/') ||
-    url.pathname.startsWith('/icons/') ||
-    url.pathname.startsWith('/_next/image') ||
-    url.hostname === 'fonts.gstatic.com' ||
-    url.hostname === 'fonts.googleapis.com'
-  ) {
-    event.respondWith(cacheFirst(request));
-    return;
+    url.pathname.startsWith('/api/') ||
+    url.hostname.includes('supabase.co') ||
+    url.hostname.includes('supabase.io')
+  ) return
+
+  // Google Fonts → Cache-First (they are immutable once fetched)
+  if (url.hostname === 'fonts.gstatic.com' || url.hostname === 'fonts.googleapis.com') {
+    event.respondWith(cacheFirst(request, FONT_CACHE))
+    return
   }
 
-  // 4. Network-First for HTML navigation (app pages)
+  // Next.js hashed static chunks + public icons → Cache-First
+  if (url.pathname.startsWith('/_next/static/') || url.pathname.startsWith('/icons/')) {
+    event.respondWith(cacheFirst(request, STATIC_CACHE))
+    return
+  }
+
+  // HTML page navigations → Network-First with offline fallback
   if (request.mode === 'navigate') {
-    event.respondWith(networkFirstWithOfflineFallback(request));
-    return;
+    event.respondWith(networkFirstWithFallback(request))
+    return
   }
 
-  // 5. Network-First for everything else (JS chunks, CSS)
-  event.respondWith(networkFirst(request));
-});
+  // Everything else (unhashed JS chunks, CSS) → Network-First
+  event.respondWith(networkFirst(request))
+})
 
 // ─── Strategies ─────────────────────────────────────────────────────────────
 
-async function cacheFirst(request) {
-  const cached = await caches.match(request);
-  if (cached) return cached;
-
+async function cacheFirst(request, cacheName = STATIC_CACHE) {
+  const cached = await caches.match(request)
+  if (cached) return cached
   try {
-    const response = await fetch(request);
+    const response = await fetch(request)
     if (response.ok) {
-      const cache = await caches.open(STATIC_CACHE);
-      cache.put(request, response.clone());
+      const cache = await caches.open(cacheName)
+      cache.put(request, response.clone())
     }
-    return response;
+    return response
   } catch {
-    // Static asset unavailable offline — return empty 204 rather than erroring
-    return new Response('', { status: 204 });
+    return new Response('', { status: 204, statusText: 'Offline' })
   }
 }
 
 async function networkFirst(request) {
   try {
-    const response = await fetch(request);
+    const response = await fetch(request)
     if (response.ok) {
-      const cache = await caches.open(DYNAMIC_CACHE);
-      cache.put(request, response.clone());
+      const cache = await caches.open(DYNAMIC_CACHE)
+      cache.put(request, response.clone())
     }
-    return response;
+    return response
   } catch {
-    const cached = await caches.match(request);
-    return cached || new Response('', { status: 204 });
+    const cached = await caches.match(request)
+    return cached || new Response('', { status: 204, statusText: 'Offline' })
   }
 }
 
-async function networkFirstWithOfflineFallback(request) {
+async function networkFirstWithFallback(request) {
   try {
-    const response = await fetch(request);
+    const response = await fetch(request)
     if (response.ok) {
-      const cache = await caches.open(DYNAMIC_CACHE);
-      cache.put(request, response.clone());
+      const cache = await caches.open(DYNAMIC_CACHE)
+      cache.put(request, response.clone())
     }
-    return response;
+    return response
   } catch {
-    // Try cached version of the same page
-    const cached = await caches.match(request);
-    if (cached) return cached;
-
-    // Fall back to offline page
-    const offlinePage = await caches.match(OFFLINE_URL);
-    return offlinePage || new Response('<h1>Offline</h1>', {
-      headers: { 'Content-Type': 'text/html' },
-    });
+    // Try the cached version of this exact page
+    const cached = await caches.match(request)
+    if (cached) return cached
+    // Last resort: branded offline page
+    const offline = await caches.match(OFFLINE_URL)
+    return offline || new Response(
+      '<!DOCTYPE html><html><body style="font-family:sans-serif;text-align:center;padding:40px"><h2>You are offline</h2><p>Please check your connection.</p></body></html>',
+      { headers: { 'Content-Type': 'text/html' } }
+    )
   }
 }
 
-// ─── Background Sync / Push (reserved for future use) ───────────────────────
-// self.addEventListener('push', ...) — not implemented yet
-// self.addEventListener('sync', ...) — not implemented yet
+// ─── Periodic cache cleanup — keep DYNAMIC_CACHE from growing unbounded ─────
+self.addEventListener('message', event => {
+  if (event.data === 'SKIP_WAITING') self.skipWaiting()
+})

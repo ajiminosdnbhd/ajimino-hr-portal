@@ -118,6 +118,7 @@ export default function LeavePage() {
         }).then(({ data }) => setStaffProfiles(data))
       }
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [profile])
 
   async function loadLeaves() {
@@ -231,11 +232,17 @@ export default function LeavePage() {
       status, approved_by: profile.name, approved_at: new Date().toISOString(),
       remarks: status === 'rejected' ? 'Rejected by ' + profile.name : null,
     }).eq('id', leave.id)
-    if (!error && status === 'approved') {
+    if (error) { setLoadError('Failed to update leave status: ' + error.message); return }
+    if (status === 'approved') {
       const field = leave.type === 'Annual Leave' ? 'al_used' : 'ml_used'
       const { data: tpData } = await adminRead<Profile>('profiles', { filters: [{ type: 'eq', col: 'id', val: leave.user_id }] })
       const tp = tpData[0]
-      if (tp) await supabase.from('profiles').update({ [field]: (leave.type === 'Annual Leave' ? tp.al_used : tp.ml_used) + leave.days }).eq('id', leave.user_id)
+      if (tp) {
+        const { error: balErr } = await supabase.from('profiles').update({
+          [field]: (leave.type === 'Annual Leave' ? tp.al_used : tp.ml_used) + leave.days
+        }).eq('id', leave.user_id)
+        if (balErr) setLoadError('Leave approved but balance update failed — please adjust manually.')
+      }
     }
     loadLeaves()
   }
@@ -244,8 +251,8 @@ export default function LeavePage() {
   async function handleCancellationApproval(leave: Leave, action: 'approve' | 'reject') {
     if (!profile) return
     if (action === 'approve') {
-      // Mark as cancelled
-      await supabase.from('leaves').update({ status: 'cancelled' }).eq('id', leave.id)
+      const { error } = await supabase.from('leaves').update({ status: 'cancelled' }).eq('id', leave.id)
+      if (error) { setLoadError('Failed to cancel leave: ' + error.message); return }
       // Only decrement balance if the leave had been approved previously (approved_by is set)
       if (leave.approved_by) {
         const field = leave.type === 'Annual Leave' ? 'al_used' : 'ml_used'
@@ -253,13 +260,16 @@ export default function LeavePage() {
         const tp = tpData[0]
         if (tp) {
           const current = leave.type === 'Annual Leave' ? tp.al_used : tp.ml_used
-          await supabase.from('profiles').update({ [field]: Math.max(0, current - leave.days) }).eq('id', leave.user_id)
+          const { error: balErr } = await supabase.from('profiles').update({
+            [field]: Math.max(0, current - leave.days)
+          }).eq('id', leave.user_id)
+          if (balErr) setLoadError('Cancellation approved but balance update failed — please adjust manually.')
         }
       }
     } else {
-      // Reject cancellation — restore to previous status
       const restored = leave.approved_by ? 'approved' : 'pending'
-      await supabase.from('leaves').update({ status: restored, cancellation_reason: null }).eq('id', leave.id)
+      const { error } = await supabase.from('leaves').update({ status: restored, cancellation_reason: null }).eq('id', leave.id)
+      if (error) { setLoadError('Failed to reject cancellation: ' + error.message); return }
     }
     loadLeaves()
   }

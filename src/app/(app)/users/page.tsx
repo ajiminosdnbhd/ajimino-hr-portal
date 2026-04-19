@@ -29,7 +29,7 @@ export default function UsersPage() {
   const [formError, setFormError] = useState('')
   const [saving, setSaving] = useState(false)
 
-  useEffect(() => { if (profile) loadUsers() }, [profile])
+  useEffect(() => { if (profile) loadUsers() }, [profile]) // eslint-disable-line react-hooks/exhaustive-deps
 
   async function loadUsers() {
     setLoadError(null)
@@ -179,6 +179,7 @@ export default function UsersPage() {
     if (profile && !isHrOrMgmt) {
       router.replace('/dashboard')
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [profile])
 
   if (!profile || !isHrOrMgmt) return null
@@ -404,7 +405,7 @@ export default function UsersPage() {
                       {canEdit && (
                         <button
                           onClick={() => startEdit(user)}
-                          className="p-1.5 hover:bg-indigo-50 rounded-lg transition text-slate-400 hover:text-indigo-600"
+                          className="p-2 min-w-[36px] min-h-[36px] hover:bg-indigo-50 rounded-lg transition text-slate-400 hover:text-indigo-600"
                           title={isSelf && !isHrOrMgmt ? 'Edit name' : 'Edit'}
                         >
                           <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>
@@ -413,7 +414,7 @@ export default function UsersPage() {
                       {canDelete && (
                         <button
                           onClick={() => handleDelete(user.id)}
-                          className="p-1.5 hover:bg-red-50 rounded-lg transition text-slate-400 hover:text-red-500"
+                          className="p-2 min-w-[36px] min-h-[36px] hover:bg-red-50 rounded-lg transition text-slate-400 hover:text-red-500"
                         >
                           <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
                         </button>

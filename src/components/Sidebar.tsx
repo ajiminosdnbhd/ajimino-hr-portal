@@ -145,13 +145,12 @@ export default function Sidebar({ profile }: { profile: Profile | null }) {
             <Link
               key={item.href}
               href={item.href}
-              className="flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all duration-150"
-              style={isActive
-                ? { background: '#4338CA', color: '#FFFFFF' }
-                : { color: 'rgba(255,255,255,0.5)' }
-              }
-              onMouseEnter={e => { if (!isActive) { (e.currentTarget as HTMLElement).style.background = 'rgba(255,255,255,0.07)'; (e.currentTarget as HTMLElement).style.color = 'rgba(255,255,255,0.85)' } }}
-              onMouseLeave={e => { if (!isActive) { (e.currentTarget as HTMLElement).style.background = ''; (e.currentTarget as HTMLElement).style.color = 'rgba(255,255,255,0.5)' } }}
+              className={`flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all duration-150 ${
+                isActive
+                  ? 'text-white'
+                  : 'text-white/50 hover:text-white/85 hover:bg-white/[0.07]'
+              }`}
+              style={isActive ? { background: '#4338CA' } : undefined}
             >
               <Icon className="w-[18px] h-[18px] flex-shrink-0" />
               {item.label}
@@ -177,8 +176,8 @@ export default function Sidebar({ profile }: { profile: Profile | null }) {
           onClick={handleLogout}
           className="w-full flex items-center gap-3 px-3 py-2 rounded-xl text-sm font-medium transition-all duration-150 mt-1"
           style={{ color: 'rgba(255,255,255,0.5)' }}
-          onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = 'rgba(200,32,47,0.15)'; (e.currentTarget as HTMLElement).style.color = '#F87171' }}
-          onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = ''; (e.currentTarget as HTMLElement).style.color = 'rgba(255,255,255,0.5)' }}
+          onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = 'rgba(200,32,47,0.15)' }}
+          onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = '' }}
         >
           <LogoutIcon className="w-[18px] h-[18px]" />
           Logout

@@ -1,8 +1,16 @@
 import type { Metadata, Viewport } from 'next'
+import { Outfit } from 'next/font/google'
 import './globals.css'
 import AppGuard from '@/components/AppGuard'
 import ServiceWorkerRegister from '@/components/ServiceWorkerRegister'
 import PWAInstallPrompt from '@/components/PWAInstallPrompt'
+
+const outfit = Outfit({
+  subsets: ['latin'],
+  weight: ['300', '400', '500', '600', '700', '800'],
+  variable: '--font-outfit',
+  display: 'swap',
+})
 
 export const metadata: Metadata = {
   title: 'AJIMINO SDN. BHD. — HR Portal',
@@ -52,17 +60,11 @@ export default function RootLayout({
         {/* Inline bfcache guard — runs before React, catches very old page snapshots */}
         {/* eslint-disable-next-line @next/next/no-sync-scripts */}
         <script dangerouslySetInnerHTML={{ __html: `window.addEventListener('pageshow',function(e){if(e.persisted)window.location.reload();});` }} />
-        <link rel="preconnect" href="https://fonts.googleapis.com" />
-        <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
-        <link
-          href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&display=swap"
-          rel="stylesheet"
-        />
-        {/* PWA — iOS splash screen color */}
+        {/* PWA — iOS */}
         <meta name="apple-mobile-web-app-capable" content="yes" />
         <meta name="mobile-web-app-capable" content="yes" />
       </head>
-      <body className="antialiased">
+      <body className={`${outfit.variable} font-sans antialiased`}>
         <AppGuard />
         <ServiceWorkerRegister />
         <PWAInstallPrompt />
