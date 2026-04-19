@@ -13,6 +13,7 @@ export default function UsersPage() {
   const [users, setUsers] = useState<Profile[]>([])
   const [showForm, setShowForm] = useState(false)
   const [loadError, setLoadError] = useState<string | null>(null)
+  const [loading, setLoading] = useState(true)
   const [editingUser, setEditingUser] = useState<Profile | null>(null)
   const [editSelfOnly, setEditSelfOnly] = useState(false)
 
@@ -32,7 +33,9 @@ export default function UsersPage() {
 
   async function loadUsers() {
     setLoadError(null)
+    setLoading(true)
     const { data, error } = await adminRead<Profile>('profiles', { order: { col: 'name' } })
+    setLoading(false)
     if (error) { setLoadError(error); return }
     const roleOrder: Record<string, number> = { management: 0, hr: 1, staff: 2 }
     setUsers(data.sort((a, b) => (roleOrder[a.role] ?? 3) - (roleOrder[b.role] ?? 3)))
@@ -163,8 +166,10 @@ export default function UsersPage() {
   }
 
   async function handleDelete(userId: string) {
-    if (!confirm('Are you sure you want to delete this user?')) return
-    await supabase.from('profiles').delete().eq('id', userId)
+    if (!confirm('Delete this staff member? This cannot be undone.')) return
+    setLoadError(null)
+    const { error } = await supabase.from('profiles').delete().eq('id', userId)
+    if (error) { setLoadError('Failed to delete: ' + error.message); return }
     loadUsers()
   }
 
@@ -201,7 +206,7 @@ export default function UsersPage() {
       {/* Form Modal */}
       {showForm && (
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
-          <div className="bg-white rounded-2xl p-6 w-full max-w-md mx-4 max-h-[90vh] overflow-y-auto">
+          <div className="bg-white rounded-2xl p-6 pb-8 w-full max-w-md mx-4 max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between mb-5">
               <h2 className="text-lg font-bold text-slate-900">
                 {editingUser
@@ -224,14 +229,15 @@ export default function UsersPage() {
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">Phone Number</label>
+                <label className="block text-sm font-medium text-slate-700 mb-1">Phone Number <span className="text-slate-400 font-normal">(for WhatsApp)</span></label>
                 <input
                   type="tel"
                   value={formPhone}
                   onChange={e => setFormPhone(e.target.value)}
-                  placeholder="e.g. 0123456789"
+                  placeholder="e.g. 0123456789 or 60123456789"
                   className="w-full px-3 py-2.5 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
                 />
+                <p className="text-xs text-slate-400 mt-1">Malaysian number — starts with 01x or 601x</p>
               </div>
               {!editingUser && (
                 <>
@@ -282,7 +288,7 @@ export default function UsersPage() {
                       className="w-full px-3 py-2.5 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
                     />
                   </div>
-                  <div className="grid grid-cols-2 gap-3">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <div>
                       <label className="block text-sm font-medium text-slate-700 mb-1">AL Entitled</label>
                       <input
@@ -337,6 +343,18 @@ export default function UsersPage() {
             </tr>
           </thead>
           <tbody>
+            {loading && [1,2,3,4].map(i => (
+              <tr key={i} className="border-b border-gray-50">
+                <td className="px-5 py-3"><div className="h-4 bg-slate-100 rounded animate-pulse w-32" /></td>
+                <td className="px-5 py-3 hidden sm:table-cell"><div className="h-4 bg-slate-100 rounded animate-pulse w-20" /></td>
+                <td className="px-5 py-3"><div className="h-5 bg-slate-100 rounded-lg animate-pulse w-14" /></td>
+                <td className="px-5 py-3 hidden lg:table-cell"><div className="h-4 bg-slate-100 rounded animate-pulse w-10" /></td>
+                <td className="px-5 py-3 hidden lg:table-cell"><div className="h-4 bg-slate-100 rounded animate-pulse w-10" /></td>
+                <td className="px-5 py-3 hidden md:table-cell"><div className="h-4 bg-slate-100 rounded animate-pulse w-24" /></td>
+                <td className="px-5 py-3 hidden xl:table-cell"><div className="h-4 bg-slate-100 rounded animate-pulse w-20" /></td>
+                <td className="px-5 py-3"><div className="h-7 bg-slate-100 rounded animate-pulse w-16" /></td>
+              </tr>
+            ))}
             {users.map(user => {
               const isSelf = profile?.id === user.id
               // Management can edit anyone; HR can edit non-management users only

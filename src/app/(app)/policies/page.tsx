@@ -11,6 +11,7 @@ export default function PoliciesPage() {
   const [policies, setPolicies] = useState<Policy[]>([])
   const [showForm, setShowForm] = useState(false)
   const [loadError, setLoadError] = useState<string | null>(null)
+  const [loading, setLoading] = useState(true)
 
   // Form
   const [formTitle, setFormTitle] = useState('')
@@ -26,9 +27,11 @@ export default function PoliciesPage() {
   async function loadPolicies() {
     if (!profile) return
     setLoadError(null)
+    setLoading(true)
     const { data, error } = await adminRead<Policy>('policies', {
       order: { col: 'created_at', asc: false },
     })
+    setLoading(false)
     if (error) { setLoadError(error); return }
     const filtered = data.filter(p =>
       p.target_departments.length === 0 ||
@@ -49,12 +52,16 @@ export default function PoliciesPage() {
     let attachmentName = null
 
     if (formFile) {
-      const filePath = `${Date.now()}-${formFile.name}`
-      const { error: uploadError } = await supabase.storage
-        .from('policy-attachments')
-        .upload(filePath, formFile)
-      if (uploadError) {
-        setFormError('Failed to upload: ' + uploadError.message)
+      const ext = formFile.name.split('.').pop()
+      const filePath = `${profile.id}/${Date.now()}.${ext}`
+      const fd = new FormData()
+      fd.append('file', formFile)
+      fd.append('bucket', 'policy-attachments')
+      fd.append('path', filePath)
+      const uploadRes = await fetch('/api/upload', { method: 'POST', body: fd })
+      if (!uploadRes.ok) {
+        const { error: msg } = await uploadRes.json().catch(() => ({ error: 'Upload failed' }))
+        setFormError('Failed to upload: ' + (msg ?? 'Unknown error'))
         setSaving(false)
         return
       }
@@ -87,9 +94,17 @@ export default function PoliciesPage() {
     setSaving(false)
   }
 
-  async function handleDelete(id: string) {
+  async function handleDelete(policy: Policy) {
     if (!confirm('Delete this policy? This cannot be undone.')) return
-    await supabase.from('policies').delete().eq('id', id)
+    // Remove storage attachment first so we don't orphan files
+    if (policy.attachment_path) {
+      await fetch('/api/upload', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ bucket: 'policy-attachments', path: policy.attachment_path }),
+      })
+    }
+    await supabase.from('policies').delete().eq('id', policy.id)
     loadPolicies()
   }
 
@@ -116,7 +131,7 @@ export default function PoliciesPage() {
       {/* Publish Form Modal */}
       {showForm && (
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
-          <div className="bg-white rounded-2xl p-6 w-full max-w-lg mx-4 max-h-[90vh] overflow-y-auto">
+          <div className="bg-white rounded-2xl p-6 pb-8 w-full max-w-lg mx-4 max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between mb-5">
               <h2 className="text-lg font-bold text-slate-900">Publish Policy</h2>
               <button onClick={() => setShowForm(false)} className="text-slate-400 hover:text-slate-600">
@@ -199,6 +214,22 @@ export default function PoliciesPage() {
       )}
 
       {/* Policies List */}
+      {loading && (
+        <div className="space-y-4">
+          {[1,2,3].map(i => (
+            <div key={i} className="bg-white border border-gray-100 rounded-2xl p-6 animate-pulse">
+              <div className="h-4 bg-slate-100 rounded w-1/2 mb-3" />
+              <div className="h-3 bg-slate-100 rounded w-1/3 mb-4" />
+              <div className="space-y-2">
+                <div className="h-3 bg-slate-100 rounded w-full" />
+                <div className="h-3 bg-slate-100 rounded w-5/6" />
+                <div className="h-3 bg-slate-100 rounded w-4/6" />
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+      {!loading && (
       <div className="space-y-4">
         {policies.map(policy => (
           <div key={policy.id} className="bg-white border border-gray-100 rounded-2xl p-6">
@@ -217,14 +248,14 @@ export default function PoliciesPage() {
               </div>
               {isHrOrMgmt && (
                 <button
-                  onClick={() => handleDelete(policy.id)}
+                  onClick={() => handleDelete(policy)}
                   className="text-slate-400 hover:text-red-500 transition"
                 >
                   <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
                 </button>
               )}
             </div>
-            <p className="text-sm text-slate-600 mt-3 whitespace-pre-wrap">{policy.content}</p>
+            <p className="text-sm text-slate-600 mt-3 whitespace-pre-wrap break-words">{policy.content}</p>
             {policy.attachment_name && (
               <button
                 onClick={async () => {
@@ -245,6 +276,7 @@ export default function PoliciesPage() {
           </div>
         )}
       </div>
+      )}
     </>
   )
 }

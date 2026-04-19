@@ -40,6 +40,7 @@ export default function AnnouncementsPage() {
   const [allProfiles, setAllProfiles] = useState<Profile[]>([])
   const [signedUrl, setSignedUrl] = useState<string | null>(null)
   const [loadingSignedUrl, setLoadingSignedUrl] = useState(false)
+  const [sendingAll, setSendingAll] = useState(false)
 
   // Create form state
   const [formTitle, setFormTitle] = useState('')
@@ -113,11 +114,14 @@ export default function AnnouncementsPage() {
     if (formFile) {
       const ext = formFile.name.split('.').pop()
       const path = `${profile.id}/${Date.now()}.${ext}`
-      const { error: uploadError } = await supabase.storage
-        .from('announcements')
-        .upload(path, formFile)
-      if (uploadError) {
-        setFormError('File upload failed: ' + uploadError.message)
+      const fd = new FormData()
+      fd.append('file', formFile)
+      fd.append('bucket', 'announcements')
+      fd.append('path', path)
+      const uploadRes = await fetch('/api/upload', { method: 'POST', body: fd })
+      if (!uploadRes.ok) {
+        const { error: msg } = await uploadRes.json().catch(() => ({ error: 'Upload failed' }))
+        setFormError('File upload failed: ' + (msg ?? 'Unknown error'))
         setSaving(false)
         return
       }
@@ -149,8 +153,13 @@ export default function AnnouncementsPage() {
 
   async function handleDelete(ann: Announcement) {
     if (!confirm('Delete this announcement?')) return
+    // Remove storage attachment via server route (bypasses RLS)
     if (ann.attachment_path) {
-      await supabase.storage.from('announcements').remove([ann.attachment_path])
+      await fetch('/api/upload', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ bucket: 'announcements', path: ann.attachment_path }),
+      })
     }
     await supabase.from('announcements').delete().eq('id', ann.id)
     loadAnnouncements()
@@ -195,10 +204,13 @@ export default function AnnouncementsPage() {
 
   async function sendToAll(ann: Announcement) {
     const recipients = getRecipients(ann).filter(r => r.phone)
+    if (recipients.length === 0) return
     const msg = buildMessage(ann, signedUrl)
+    setSendingAll(true)
     for (let i = 0; i < recipients.length; i++) {
       setTimeout(() => {
         if (recipients[i].phone) openWa(recipients[i].phone!, msg)
+        if (i === recipients.length - 1) setSendingAll(false)
       }, i * 300)
     }
   }
@@ -404,9 +416,10 @@ export default function AnnouncementsPage() {
                     {withPhone.length > 0 && (
                       <button
                         onClick={() => sendToAll(whatsappAnn)}
-                        className="bg-green-600 hover:bg-green-700 text-white text-xs font-bold px-3 py-1.5 rounded-lg transition"
+                        disabled={sendingAll}
+                        className="bg-green-600 hover:bg-green-700 text-white text-xs font-bold px-3 py-1.5 rounded-lg transition disabled:opacity-60 disabled:cursor-wait"
                       >
-                        Send to All ({withPhone.length})
+                        {sendingAll ? 'Opening...' : `Send to All (${withPhone.length})`}
                       </button>
                     )}
                   </div>

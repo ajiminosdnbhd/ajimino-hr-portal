@@ -189,6 +189,12 @@ export default function PlannerPage() {
       setSaving(false); return
     }
 
+    // End time must be after start time
+    if (formTimeMode === 'custom' && formEndTime <= formTime) {
+      setFormError('End time must be after start time.')
+      setSaving(false); return
+    }
+
     try {
       // ── Room conflict check ──────────────────────────────────────────────
       if (formRoomId && formTimeMode === 'custom') {
@@ -268,7 +274,8 @@ export default function PlannerPage() {
   }
 
   async function handleDeleteEvent(id: string) {
-    await supabase.from('events').delete().eq('id', id)
+    const { error } = await supabase.from('events').delete().eq('id', id)
+    if (error) { alert('Failed to delete event: ' + error.message); return }
     loadMonthData()
   }
 
@@ -656,12 +663,12 @@ export default function PlannerPage() {
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-lg font-bold text-slate-900">{MONTHS[month]} {year}</h2>
             <div className="flex items-center gap-1">
-              <button onClick={prevMonth} className="p-2 hover:bg-slate-100 rounded-lg transition">
+              <button onClick={prevMonth} className="p-2.5 hover:bg-slate-100 rounded-lg transition min-w-[40px] min-h-[40px] flex items-center justify-center">
                 <svg className="w-4 h-4 text-slate-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" /></svg>
               </button>
               <button onClick={() => { const t = new Date(); setMonth(t.getMonth()); setYear(t.getFullYear()); setSelectedDate(t.toISOString().split('T')[0]) }}
-                className="px-3 py-1 text-xs font-medium text-indigo-600 hover:bg-indigo-50 rounded-lg transition">Today</button>
-              <button onClick={nextMonth} className="p-2 hover:bg-slate-100 rounded-lg transition">
+                className="px-3 py-2 text-xs font-medium text-indigo-600 hover:bg-indigo-50 rounded-lg transition min-h-[40px]">Today</button>
+              <button onClick={nextMonth} className="p-2.5 hover:bg-slate-100 rounded-lg transition min-w-[40px] min-h-[40px] flex items-center justify-center">
                 <svg className="w-4 h-4 text-slate-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" /></svg>
               </button>
             </div>
@@ -959,7 +966,7 @@ export default function PlannerPage() {
                               <p className="text-xs font-semibold text-slate-900">{room?.name || b.room_id}</p>
                             </div>
                             {(profile?.role === 'management' || b.user_id === profile?.id) && (
-                              <button onClick={async () => { await supabase.from('bookings').delete().eq('id', b.id); loadMonthData() }}
+                              <button onClick={async () => { const { error } = await supabase.from('bookings').delete().eq('id', b.id); if (error) { alert('Failed to cancel booking'); return } loadMonthData() }}
                                 className="text-[10px] text-red-500 hover:text-red-700 font-semibold transition">
                                 Cancel
                               </button>
@@ -1049,7 +1056,7 @@ export default function PlannerPage() {
       {/* Unified Event Form Modal */}
       {activeForm === 'event' && (
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl w-full max-w-lg max-h-[92vh] overflow-y-auto shadow-xl">
+          <div className="bg-white rounded-2xl w-full max-w-lg max-h-[92vh] overflow-y-auto shadow-xl pb-6">
             <div className="flex items-center justify-between p-5 border-b border-gray-100">
               <h2 className="text-base font-bold text-slate-900">
                 {editingEvent ? 'Edit Event' : '+ New Event'}
@@ -1110,7 +1117,7 @@ export default function PlannerPage() {
               {/* Room Booking (optional) */}
               <div className="border border-gray-100 rounded-xl p-3 bg-slate-50">
                 <label className="block text-xs font-semibold text-slate-600 mb-2">Room Booking <span className="font-normal text-slate-400">(optional)</span></label>
-                <div className="grid grid-cols-2 gap-2">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                   <button type="button" onClick={() => setFormRoomId('')}
                     className={`py-2 px-3 rounded-lg text-xs font-medium border transition ${!formRoomId ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-slate-600 border-gray-200 hover:border-indigo-300'}`}>
                     No Room Needed

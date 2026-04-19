@@ -8,51 +8,56 @@ import { adminRead } from '@/lib/adminRead'
 import LoadError from '@/components/LoadError'
 
 async function exportLeavesPDF(leaves: Leave[], staffProfiles: Profile[], title: string) {
-  const { default: jsPDF } = await import('jspdf')
-  const { default: autoTable } = await import('jspdf-autotable')
-  const doc = new jsPDF({ orientation: 'landscape' })
-  const now = new Date().toLocaleDateString('en-MY', { day: 'numeric', month: 'long', year: 'numeric' })
-  doc.setFontSize(16); doc.setTextColor(10, 17, 40)
-  doc.text('AJIMINO SDN. BHD.', 14, 16)
-  doc.setFontSize(11); doc.setTextColor(80, 80, 80)
-  doc.text(title, 14, 23)
-  doc.setFontSize(9)
-  doc.text(`Generated: ${now}`, 14, 29)
-  autoTable(doc, {
-    startY: 34,
-    head: [['Staff Name', 'Department', 'Type', 'Start Date', 'End Date', 'Days', 'Reason', 'Status', 'Approved By']],
-    body: leaves.map(l => [
-      l.user_name, l.department,
-      l.type === 'Annual Leave' ? 'AL' : 'ML',
-      new Date(l.start_date + 'T00:00:00').toLocaleDateString('en-MY', { day: 'numeric', month: 'short', year: 'numeric' }),
-      new Date(l.end_date + 'T00:00:00').toLocaleDateString('en-MY', { day: 'numeric', month: 'short', year: 'numeric' }),
-      l.days.toString(), l.reason,
-      l.status.charAt(0).toUpperCase() + l.status.slice(1),
-      l.approved_by || '-',
-    ]),
-    styles: { fontSize: 8, cellPadding: 3 },
-    headStyles: { fillColor: [10, 17, 40], textColor: 255, fontStyle: 'bold' },
-    alternateRowStyles: { fillColor: [248, 249, 251] },
-    columnStyles: { 6: { cellWidth: 40 } },
-  })
-  if (staffProfiles.length > 0) {
-    const finalY = (doc as unknown as { lastAutoTable: { finalY: number } }).lastAutoTable.finalY + 10
-    doc.setFontSize(12); doc.setTextColor(10, 17, 40)
-    doc.text('Staff Leave Balance Summary', 14, finalY)
+  try {
+    const { default: jsPDF } = await import('jspdf')
+    const { default: autoTable } = await import('jspdf-autotable')
+    const doc = new jsPDF({ orientation: 'landscape' })
+    const now = new Date().toLocaleDateString('en-MY', { day: 'numeric', month: 'long', year: 'numeric' })
+    doc.setFontSize(16); doc.setTextColor(10, 17, 40)
+    doc.text('AJIMINO SDN. BHD.', 14, 16)
+    doc.setFontSize(11); doc.setTextColor(80, 80, 80)
+    doc.text(title, 14, 23)
+    doc.setFontSize(9)
+    doc.text(`Generated: ${now}`, 14, 29)
     autoTable(doc, {
-      startY: finalY + 4,
-      head: [['Name', 'Department', 'AL Entitled', 'AL Used', 'AL Remaining', 'ML Entitled', 'ML Used', 'ML Remaining']],
-      body: staffProfiles.map(p => [
-        p.name, p.department,
-        p.al_entitled.toString(), p.al_used.toString(), (p.al_entitled - p.al_used).toString(),
-        p.ml_entitled.toString(), p.ml_used.toString(), (p.ml_entitled - p.ml_used).toString(),
+      startY: 34,
+      head: [['Staff Name', 'Department', 'Type', 'Start Date', 'End Date', 'Days', 'Reason', 'Status', 'Approved By']],
+      body: leaves.map(l => [
+        l.user_name, l.department,
+        l.type === 'Annual Leave' ? 'AL' : 'ML',
+        new Date(l.start_date + 'T00:00:00').toLocaleDateString('en-MY', { day: 'numeric', month: 'short', year: 'numeric' }),
+        new Date(l.end_date + 'T00:00:00').toLocaleDateString('en-MY', { day: 'numeric', month: 'short', year: 'numeric' }),
+        l.days.toString(), l.reason,
+        l.status.charAt(0).toUpperCase() + l.status.slice(1),
+        l.approved_by || '-',
       ]),
       styles: { fontSize: 8, cellPadding: 3 },
-      headStyles: { fillColor: [67, 56, 202], textColor: 255, fontStyle: 'bold' },
+      headStyles: { fillColor: [10, 17, 40], textColor: 255, fontStyle: 'bold' },
       alternateRowStyles: { fillColor: [248, 249, 251] },
+      columnStyles: { 6: { cellWidth: 40 } },
     })
+    if (staffProfiles.length > 0) {
+      const finalY = (doc as unknown as { lastAutoTable: { finalY: number } }).lastAutoTable.finalY + 10
+      doc.setFontSize(12); doc.setTextColor(10, 17, 40)
+      doc.text('Staff Leave Balance Summary', 14, finalY)
+      autoTable(doc, {
+        startY: finalY + 4,
+        head: [['Name', 'Department', 'AL Entitled', 'AL Used', 'AL Remaining', 'ML Entitled', 'ML Used', 'ML Remaining']],
+        body: staffProfiles.map(p => [
+          p.name, p.department,
+          p.al_entitled.toString(), p.al_used.toString(), (p.al_entitled - p.al_used).toString(),
+          p.ml_entitled.toString(), p.ml_used.toString(), (p.ml_entitled - p.ml_used).toString(),
+        ]),
+        styles: { fontSize: 8, cellPadding: 3 },
+        headStyles: { fillColor: [67, 56, 202], textColor: 255, fontStyle: 'bold' },
+        alternateRowStyles: { fillColor: [248, 249, 251] },
+      })
+    }
+    doc.save(`Leave_Report_${new Date().toISOString().split('T')[0]}.pdf`)
+  } catch (err) {
+    console.error('PDF export error:', err)
+    alert('PDF export failed. Please try again.')
   }
-  doc.save(`Leave_Report_${new Date().toISOString().split('T')[0]}.pdf`)
 }
 
 function statusBadge(status: Leave['status']) {
@@ -80,6 +85,7 @@ export default function LeavePage() {
   const [staffProfiles, setStaffProfiles] = useState<Profile[]>([])
   const [showForm, setShowForm] = useState(false)
   const [loadError, setLoadError] = useState<string | null>(null)
+  const [loading, setLoading] = useState(true)
 
   // Leave application form state
   const [formType, setFormType] = useState<'Annual Leave' | 'Medical Leave'>('Annual Leave')
@@ -112,16 +118,20 @@ export default function LeavePage() {
         }).then(({ data }) => setStaffProfiles(data))
       }
     }
-  }, [profile, tab])
+  }, [profile])
 
   async function loadLeaves() {
     if (!profile) return
     setLoadError(null)
-    const filters = tab === 'my' ? [{ type: 'eq' as const, col: 'user_id', val: profile.id }] : []
+    setLoading(true)
+    // HR/Management load all leaves so the approval badge count is always accurate
+    // regardless of which tab they are on. Staff only load their own leaves.
+    const filters = isHrOrMgmt ? [] : [{ type: 'eq' as const, col: 'user_id', val: profile.id }]
     const { data, error } = await adminRead<Leave>('leaves', {
       filters,
       order: { col: 'created_at', asc: false },
     })
+    setLoading(false)
     if (error) { setLoadError(error); return }
     setLeaves(data)
   }
@@ -150,8 +160,9 @@ export default function LeavePage() {
     e.preventDefault()
     setFormError('')
     if (!profile) return
+    if (formEnd < formStart) { setFormError('End date cannot be before start date'); return }
     const days = calculateDays(formStart, formEnd)
-    if (days <= 0) { setFormError('Invalid date range'); return }
+    if (days <= 0) { setFormError('No working days in selected range (weekends only?)'); return }
     if (formType === 'Annual Leave' && (profile.al_used + days) > profile.al_entitled) {
       setFormError(`Insufficient AL. Available: ${profile.al_entitled - profile.al_used} days`); return
     }
@@ -257,8 +268,11 @@ export default function LeavePage() {
   const mlBalance = profile ? profile.ml_entitled - profile.ml_used : 0
 
   // Approvals tab: pending leaves + cancellation requests
+  // My tab: HR/Mgmt may have all leaves loaded, so filter to current user's leaves
   const filteredLeaves = tab === 'approvals'
     ? leaves.filter(l => (l.status === 'pending' || l.status === 'cancellation_requested') && canApprove(l))
+    : tab === 'my'
+    ? leaves.filter(l => l.user_id === profile?.id)
     : leaves
 
   const approvalCount = leaves.filter(l => (l.status === 'pending' || l.status === 'cancellation_requested') && canApprove(l)).length
@@ -495,7 +509,18 @@ export default function LeavePage() {
       )}
 
       {/* Leave list — card layout on mobile, table on md+ */}
-      {tab !== 'balances' && (
+      {tab !== 'balances' && loading && (
+        <div className="space-y-3">
+          {[1, 2, 3].map(i => (
+            <div key={i} className="bg-white border border-gray-100 rounded-2xl p-5 animate-pulse">
+              <div className="h-4 bg-slate-100 rounded-lg w-1/3 mb-3" />
+              <div className="h-3 bg-slate-100 rounded-lg w-2/3 mb-2" />
+              <div className="h-3 bg-slate-100 rounded-lg w-1/2" />
+            </div>
+          ))}
+        </div>
+      )}
+      {tab !== 'balances' && !loading && (
         <>
           {/* Mobile card layout */}
           <div className="md:hidden space-y-3">
@@ -528,8 +553,11 @@ export default function LeavePage() {
                 )}
                 {leave.receipt_name && (
                   <button onClick={async () => {
-                    const { data } = await supabase.storage.from('receipts').createSignedUrl(leave.receipt_path!, 60)
-                    if (data?.signedUrl) window.open(data.signedUrl, '_blank')
+                    try {
+                      const { data, error } = await supabase.storage.from('receipts').createSignedUrl(leave.receipt_path!, 60)
+                      if (error) throw error
+                      if (data?.signedUrl) window.open(data.signedUrl, '_blank')
+                    } catch { alert('Could not open receipt. Please try again.') }
                   }} className="text-xs text-indigo-600 font-medium mb-2 block">View Receipt</button>
                 )}
                 <div className="flex gap-2 flex-wrap mt-2">

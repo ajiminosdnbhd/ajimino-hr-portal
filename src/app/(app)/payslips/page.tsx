@@ -8,6 +8,10 @@ import LoadError from '@/components/LoadError'
 
 const MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']
 
+// Dynamic year range: 2 years back to 2 years ahead of current year
+const CURRENT_YEAR = new Date().getFullYear()
+const YEAR_OPTIONS = Array.from({ length: 5 }, (_, i) => CURRENT_YEAR - 2 + i)
+
 export default function PayslipsPage() {
   const { profile, supabase } = useProfile()
   const [payslips, setPayslips] = useState<Payslip[]>([])
@@ -126,7 +130,7 @@ export default function PayslipsPage() {
             onChange={e => setFilterYear(Number(e.target.value))}
             className="px-3 py-2.5 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
           >
-            {[2024, 2025, 2026, 2027].map(y => (
+            {YEAR_OPTIONS.map(y => (
               <option key={y} value={y}>{y}</option>
             ))}
           </select>
@@ -186,7 +190,7 @@ export default function PayslipsPage() {
                     onChange={e => setFormYear(Number(e.target.value))}
                     className="w-full px-3 py-2.5 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
                   >
-                    {[2024, 2025, 2026, 2027].map(y => (
+                    {YEAR_OPTIONS.map(y => (
                       <option key={y} value={y}>{y}</option>
                     ))}
                   </select>
