@@ -44,8 +44,9 @@ export const viewport: Viewport = {
   themeColor: '#0A1128',
   width: 'device-width',
   initialScale: 1,
-  maximumScale: 1,
-  userScalable: false,
+  // Allow user zoom — required for WCAG 2.1 AA (Success Criterion 1.4.4)
+  maximumScale: 5,
+  userScalable: true,
   viewportFit: 'cover',
 }
 

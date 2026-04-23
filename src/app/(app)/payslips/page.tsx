@@ -61,6 +61,11 @@ export default function PayslipsPage() {
     if (!profile || !formFile) return
     setSaving(true)
 
+    if (formFile.size > 20 * 1024 * 1024) {
+      setFormError('File too large — maximum 20 MB')
+      setSaving(false)
+      return
+    }
     const targetProfile = allProfiles.find(p => p.id === formUserId)
     if (!targetProfile) {
       setFormError('Select a staff member')
@@ -92,6 +97,12 @@ export default function PayslipsPage() {
     }, { onConflict: 'user_id,month,year' })
 
     if (error) {
+      // DB insert failed — clean up the orphaned storage file
+      await fetch('/api/upload', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ bucket: 'payslips', path: filePath }),
+      }).catch(() => {})
       setFormError(error.message)
     } else {
       setShowForm(false)

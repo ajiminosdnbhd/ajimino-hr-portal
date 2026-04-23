@@ -80,7 +80,7 @@ export default function PWAInstallPrompt() {
           <div className="flex items-start gap-3">
             <div className="shrink-0 w-11 h-11 rounded-xl overflow-hidden bg-[#0A1128] flex items-center justify-center">
               {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src="/icons/icon-96x96.png" alt="" width={44} height={44} className="w-full h-full object-contain" />
+              <img src="/icons/icon-96x96.png" alt="AJIMINO HR" width={44} height={44} className="w-full h-full object-contain" />
             </div>
             <div className="flex-1 min-w-0">
               <p className="text-sm font-bold text-slate-900 leading-tight">Add to Home Screen</p>

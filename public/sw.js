@@ -19,11 +19,16 @@ const PRECACHE_ASSETS = [
   '/icons/icon-maskable-192x192.png',
 ]
 
+const DYNAMIC_CACHE_MAX = 60  // maximum entries in the dynamic cache
+
 // ─── Install ────────────────────────────────────────────────────────────────
 self.addEventListener('install', event => {
   event.waitUntil(
     caches.open(STATIC_CACHE)
-      .then(cache => cache.addAll(PRECACHE_ASSETS))
+      .then(cache =>
+        // addAll fails atomically — skip any individual 404s gracefully
+        Promise.allSettled(PRECACHE_ASSETS.map(url => cache.add(url)))
+      )
       .then(() => self.skipWaiting())
   )
 })
@@ -98,11 +103,22 @@ async function networkFirst(request) {
     if (response.ok) {
       const cache = await caches.open(DYNAMIC_CACHE)
       cache.put(request, response.clone())
+      trimCache(DYNAMIC_CACHE, DYNAMIC_CACHE_MAX)
     }
     return response
   } catch {
     const cached = await caches.match(request)
     return cached || new Response('', { status: 204, statusText: 'Offline' })
+  }
+}
+
+// Keep dynamic cache from growing unbounded
+async function trimCache(cacheName, maxItems) {
+  const cache = await caches.open(cacheName)
+  const keys = await cache.keys()
+  if (keys.length > maxItems) {
+    await cache.delete(keys[0])
+    trimCache(cacheName, maxItems)
   }
 }
 

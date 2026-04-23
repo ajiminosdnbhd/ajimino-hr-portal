@@ -29,13 +29,11 @@ export async function adminRead<T = Record<string, unknown>>(
     })
     const json = await res.json()
     if (!res.ok) {
-      console.error(`[adminRead] ${table} failed:`, json.error)
       return { data: [], count: 0, error: json.error || `Failed to load ${table}` }
     }
     return json
   } catch (err) {
     const msg = err instanceof Error ? err.message : 'Network error'
-    console.error(`[adminRead] ${table} error:`, msg)
     return { data: [], count: 0, error: msg }
   }
 }

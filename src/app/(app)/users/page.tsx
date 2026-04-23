@@ -166,7 +166,9 @@ export default function UsersPage() {
   }
 
   async function handleDelete(userId: string) {
-    if (!confirm('Delete this staff member? This cannot be undone.')) return
+    const user = users.find(u => u.id === userId)
+    const label = user ? `${user.name} (${user.department})` : 'this staff member'
+    if (!confirm(`Delete ${label}? This cannot be undone.`)) return
     setLoadError(null)
     const { error } = await supabase.from('profiles').delete().eq('id', userId)
     if (error) { setLoadError('Failed to delete: ' + error.message); return }
@@ -214,7 +216,7 @@ export default function UsersPage() {
                   ? editSelfOnly ? 'Edit My Profile' : 'Edit Staff'
                   : 'Add New Staff'}
               </h2>
-              <button onClick={() => { setShowForm(false); resetForm() }} className="text-slate-400 hover:text-slate-600">
+              <button onClick={() => { setShowForm(false); resetForm() }} aria-label="Close" className="text-slate-400 hover:text-slate-600">
                 <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
               </button>
             </div>

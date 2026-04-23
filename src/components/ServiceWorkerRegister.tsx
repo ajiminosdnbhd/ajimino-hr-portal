@@ -6,6 +6,8 @@ export default function ServiceWorkerRegister() {
   useEffect(() => {
     if (!('serviceWorker' in navigator)) return
 
+    let cleanupFn: (() => void) | undefined
+
     const register = async () => {
       try {
         const registration = await navigator.serviceWorker.register('/sw.js', {
@@ -16,36 +18,29 @@ export default function ServiceWorkerRegister() {
         // Check for updates every time the page gains focus
         const checkUpdate = () => registration.update().catch(() => {})
         window.addEventListener('focus', checkUpdate)
+        // Store cleanup so useEffect can remove the listener on unmount
+        cleanupFn = () => window.removeEventListener('focus', checkUpdate)
 
         registration.addEventListener('updatefound', () => {
           const newWorker = registration.installing
           if (!newWorker) return
-
           newWorker.addEventListener('statechange', () => {
-            // New SW is ready — reload if user is not mid-action
-            if (
-              newWorker.state === 'activated' &&
-              navigator.serviceWorker.controller
-            ) {
-              // The new SW is in control after reload
-              // We deliberately do NOT auto-reload — AppGuard handles version-bump reloads
-            }
+            // AppGuard handles version-bump reloads — no auto-reload here
           })
         })
-
-        return () => window.removeEventListener('focus', checkUpdate)
-      } catch (err) {
+      } catch {
         // SW registration failure is non-fatal — app still works online
-        console.warn('[SW] Registration failed:', err)
       }
     }
 
-    // Defer registration until after page load to avoid blocking critical resources
     if (document.readyState === 'complete') {
       register()
     } else {
       window.addEventListener('load', register, { once: true })
     }
+
+    // Return cleanup: removes the focus listener added inside register()
+    return () => cleanupFn?.()
   }, [])
 
   return null

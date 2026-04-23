@@ -695,7 +695,7 @@ export default function PlannerPage() {
           {/* Calendar grid */}
           <div className="grid grid-cols-7 gap-px bg-slate-100 rounded-xl overflow-hidden border border-slate-100">
             {Array.from({ length: firstDay }).map((_, i) => (
-              <div key={`e-${i}`} className="bg-slate-50 min-h-[90px] md:min-h-[110px]" />
+              <div key={`empty-${i}`} className="bg-slate-50 min-h-[70px] sm:min-h-[90px] md:min-h-[110px]" />
             ))}
             {Array.from({ length: daysInMonth }).map((_, i) => {
               const day = i + 1
@@ -717,7 +717,7 @@ export default function PlannerPage() {
                 <div
                   key={day}
                   onClick={() => setSelectedDate(selectedDate === dateStr ? null : dateStr)}
-                  className={`bg-white min-h-[90px] md:min-h-[110px] p-1 cursor-pointer transition-all
+                  className={`bg-white min-h-[70px] sm:min-h-[90px] md:min-h-[110px] p-1 cursor-pointer transition-all
                     ${holiday ? '!bg-red-50' : ''}
                     ${!holiday && hasApproved ? '!bg-emerald-50' : ''}
                     ${!holiday && !hasApproved && hasPending ? '!bg-amber-50' : ''}

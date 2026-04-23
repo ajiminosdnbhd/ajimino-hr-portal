@@ -113,6 +113,11 @@ export default function AnnouncementsPage() {
     let attachment_name: string | null = null
 
     if (formFile) {
+      if (formFile.size > 10 * 1024 * 1024) {
+        setFormError('File too large — maximum 10 MB')
+        setSaving(false)
+        return
+      }
       const ext = formFile.name.split('.').pop()
       const path = `${profile.id}/${Date.now()}.${ext}`
       const fd = new FormData()
@@ -208,12 +213,14 @@ export default function AnnouncementsPage() {
     if (recipients.length === 0) return
     const msg = buildMessage(ann, signedUrl)
     setSendingAll(true)
+    // Use sequential async loop instead of setTimeout to avoid memory leaks
+    // if the component unmounts before all timeouts fire
+    const delay = (ms: number) => new Promise(res => setTimeout(res, ms))
     for (let i = 0; i < recipients.length; i++) {
-      setTimeout(() => {
-        if (recipients[i].phone) openWa(recipients[i].phone!, msg)
-        if (i === recipients.length - 1) setSendingAll(false)
-      }, i * 300)
+      if (i > 0) await delay(300)
+      if (recipients[i].phone) openWa(recipients[i].phone!, msg)
     }
+    setSendingAll(false)
   }
 
   function toggleDept(dept: string) {
